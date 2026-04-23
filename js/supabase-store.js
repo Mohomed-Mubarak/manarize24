@@ -112,8 +112,8 @@ export async function getProduct({ slug, id, adminMode = false } = {}) {
   let q = sb.from('products').select('*');
   // Storefront only shows active products; admin can fetch inactive ones too
   if (!adminMode) q = q.eq('active', true);
-  if (slug) q = q.eq('slug', slug).single();
-  else if (id) q = q.eq('id', id).single();
+  if (slug) q = q.eq('slug', slug).maybeSingle();
+  else if (id) q = q.eq('id', id).maybeSingle();
   else throw new Error('getProduct requires slug or id');
 
   const row = await querySafe(q);
@@ -230,7 +230,7 @@ export async function getOrder(orderId) {
   }
 
   const row = await querySafe(
-    sb.from('orders').select('*').eq('id', orderId).single()
+    sb.from('orders').select('*').eq('id', orderId).maybeSingle()
   );
   if (row) return mapOrderRow(row);
 
@@ -354,7 +354,7 @@ export async function getCoupon(code) {
       .select('*')
       .eq('code', code.toUpperCase())
       .eq('active', true)
-      .single()
+      .maybeSingle()
   );
 
   if (!coupon) return null;
@@ -455,7 +455,7 @@ export async function submitReview(review) {
       created_at: new Date().toISOString(),
     })
     .select()
-    .single();
+    .maybeSingle();
 
   if (error) throw new Error(error.message);
   return mapReviewRow(data);
@@ -475,7 +475,7 @@ export async function getProfile() {
   if (!user) return null;
 
   return querySafe(
-    sb.from('profiles').select('*').eq('id', user.id).single()
+    sb.from('profiles').select('*').eq('id', user.id).maybeSingle()
   );
 }
 
@@ -495,7 +495,7 @@ export async function updateProfile(updates) {
     .from('profiles')
     .upsert({ id: user.id, ...updates })
     .select()
-    .single();
+    .maybeSingle();
 
   if (error) throw new Error(error.message);
   return data;
@@ -516,7 +516,7 @@ export async function saveContactMessage(msg) {
     .from('contact_messages')
     .insert({ ...msg, read: false, created_at: new Date().toISOString() })
     .select()
-    .single();
+    .maybeSingle();
 
   if (error) throw new Error(error.message);
   return data;
@@ -565,7 +565,7 @@ export async function saveProduct(product) {
     .from('products')
     .upsert(row, { onConflict: 'id' })
     .select()
-    .single();
+    .maybeSingle();
 
   if (error) throw new Error(error.message);
   return data;
@@ -959,7 +959,7 @@ export async function getBlogPost({ slug, id } = {}) {
   let q = sb.from('blog_posts').select('*');
   if (slug) q = q.eq('slug', slug);
   else if (id) q = q.eq('id', id);
-  const { data, error } = await q.single();
+  const { data, error } = await q.maybeSingle();
   if (error) return null;
   return mapBlogRow(data);
 }
@@ -1262,7 +1262,7 @@ export async function getUserReview(userId, productId) {
   const sb = getSupabase();
   if (!sb) throw new Error('Supabase not initialised');
   const row = await querySafe(
-    sb.from('reviews').select('*').eq('user_id', userId).eq('product_id', productId).single()
+    sb.from('reviews').select('*').eq('user_id', userId).eq('product_id', productId).maybeSingle()
   );
   return row ? { ...mapReviewRow(row), text: row.body || row.text || '' } : null;
 }
@@ -1342,7 +1342,7 @@ export async function getAddresses(userId) {
   const sb = getSupabase();
   if (!sb) throw new Error('Supabase not initialised');
   const row = await querySafe(
-    sb.from('profiles').select('addresses').eq('id', userId).single()
+    sb.from('profiles').select('addresses').eq('id', userId).maybeSingle()
   );
   return Array.isArray(row?.addresses) ? row.addresses : [];
 }
@@ -1421,4 +1421,3 @@ export async function deleteContactMessage(id) {
 // SECTION: Extended functions — Reviews (admin), Addresses,
 //          Newsletter, Contact Messages  (Supabase migration)
 // ══════════════════════════════════════════════════════════════
-

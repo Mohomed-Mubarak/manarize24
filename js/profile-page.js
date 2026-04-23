@@ -16,12 +16,12 @@ import { getUserReview, canEdit, getUserReviews, addReview, editReview, canRevie
 import toast from './toast.js';
 import { DEMO_MODE } from './config.js';
 import { getSupabase } from './supabase.js';
-
+ 
 function esc(str) {
   return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 import { confirmModal } from './modal.js';
-
+ 
 /* ── Synchronous early hydration ─────────────────────────────────
    Runs immediately when the module is parsed (before any await).
    Reads the cached session from localStorage and populates the
@@ -34,14 +34,14 @@ import { confirmModal } from './modal.js';
     if (!raw) return;
     const user = JSON.parse(raw);
     if (!user) return;
-
+ 
     const name  = user.name  || (user.email ? user.email.split('@')[0] : '') || 'My Account';
     const email = user.email || '';
-
+ 
     const nameEl   = document.getElementById('profile-name');
     const emailEl  = document.getElementById('profile-email');
     const avatarEl = document.getElementById('profile-avatar');
-
+ 
     if (nameEl)  nameEl.textContent  = name;
     if (emailEl) emailEl.textContent = email;
     if (avatarEl) {
@@ -51,7 +51,7 @@ import { confirmModal } from './modal.js';
     }
   } catch (_) { /* silently ignore — async block will fill in shortly */ }
 })();
-
+ 
 /**
  * In production, Supabase may have a valid session that hasn't been
  * written to zm_session yet (e.g. first load after OTP redirect).
@@ -59,15 +59,15 @@ import { confirmModal } from './modal.js';
  */
 async function waitForSession() {
   if (DEMO_MODE) return isLoggedIn();
-
+ 
   const sb = getSupabase();
   if (!sb) return isLoggedIn();
-
+ 
   // Always fetch a fresh Supabase session so name/email are never stale.
   // This fixes returning users whose localStorage session has empty name/email.
   const { data } = await sb.auth.getSession();
   const sbSession = data?.session;
-
+ 
   if (sbSession?.user) {
     const sbUser = sbSession.user;
     let name = sbUser.user_metadata?.name
@@ -76,7 +76,7 @@ async function waitForSession() {
             || sbUser.identities?.[0]?.identity_data?.name
             || '';
     let email = sbUser.email || '';
-
+ 
     // If auth metadata has no name, try the profiles table (most reliable source)
     if (!name || !email) {
       try {
@@ -91,10 +91,10 @@ async function waitForSession() {
         }
       } catch (_) { /* profiles table may not exist in all setups */ }
     }
-
+ 
     // Final fallback — derive display name from email
     if (!name) name = email ? email.split('@')[0] : 'My Account';
-
+ 
     setSession({
       id:        sbUser.id,
       name,
@@ -106,22 +106,22 @@ async function waitForSession() {
     });
     return true;
   }
-
+ 
   // No live Supabase session — fall back to whatever is in localStorage.
   return isLoggedIn();
 }
-
+ 
 withLoader(async () => {
   initSupabaseListeners();
-
+ 
   // ── 1. Auth gate ──────────────────────────────────────────
   let authed = false;
   try { authed = await waitForSession(); } catch(e) { console.warn('[Profile] waitForSession error:', e); }
   if (!authed) { window.location.href = 'login.html'; return; }
-
+ 
   // ── 2. Layout (nav + footer) ──────────────────────────────
   try { await injectLayout({}); } catch(e) { console.warn('[Profile] injectLayout error:', e); }
-
+ 
   // ── 3. Resolve user — must never be null past this point ──
   let user = getCurrentUser();
   if (!user) {
@@ -148,11 +148,11 @@ withLoader(async () => {
     } catch(e) { console.warn('[Profile] session re-fetch error:', e); }
   }
   if (!user) { window.location.href = 'login.html'; return; }
-
+ 
   // Guarantee name and email are never empty strings
   if (!user.name)  user.name  = user.email?.split('@')[0] || 'My Account';
   if (!user.email) user.email = '';
-
+ 
   // ── 4. Welcome toast ──────────────────────────────────────
   try {
     const justLoggedIn = sessionStorage.getItem('zm_just_logged_in');
@@ -162,7 +162,7 @@ withLoader(async () => {
       toast.success(`Welcome back, ${firstName}! 👋`, 'You are now signed in.');
     }
   } catch(e) { /* non-critical */ }
-
+ 
   // ── 5. Sidebar — avatar / name / email ────────────────────
   // (also re-runs here to pick up any fresher Supabase data, overwriting
   //  the synchronous early hydration that ran at module parse time)
@@ -170,7 +170,7 @@ withLoader(async () => {
     const displayName  = user.name  || user.email?.split('@')[0] || 'My Account';
     const displayEmail = user.email || '';
     const initial      = displayName[0].toUpperCase();
-
+ 
     const avatarEl = document.getElementById('profile-avatar');
     if (avatarEl) {
       avatarEl.innerHTML = '';
@@ -182,7 +182,7 @@ withLoader(async () => {
     if (nameEl)  nameEl.textContent  = displayName;
     if (emailEl) emailEl.textContent = displayEmail;
   } catch(e) { console.warn('[Profile] sidebar update error:', e); }
-
+ 
   // ── 6. Settings form prefill ──────────────────────────────
   try {
     const settingsName  = document.getElementById('settings-name');
@@ -195,14 +195,14 @@ withLoader(async () => {
       if (user.phone) settingsPhone.value = user.phone;
     }
   } catch(e) { console.warn('[Profile] settings prefill error:', e); }
-
+ 
   // ── 7. Panel routing ──────────────────────────────────────
   try {
     const urlPanel = new URLSearchParams(window.location.search).get('panel') || 'orders';
     activatePanel(urlPanel);
     initNav();
   } catch(e) { console.warn('[Profile] nav init error:', e); }
-
+ 
   // ── 8. Data panels — each isolated so one failure won't block the rest ──
   try { await renderOrders(user);       } catch(e) { console.warn('[Profile] renderOrders error:', e); }
   try { renderWishlist();               } catch(e) { console.warn('[Profile] renderWishlist error:', e); }
@@ -211,24 +211,24 @@ withLoader(async () => {
   try { renderNotifications(user);      } catch(e) { console.warn('[Profile] renderNotifications error:', e); }
   try { renderAddresses(user);          } catch(e) { console.warn('[Profile] renderAddresses error:', e); }
   try { updateProfileNotifBadge(user);  } catch(e) { /* non-critical */ }
-
+ 
   // ── 9. Event listeners ────────────────────────────────────
   window.addEventListener('notifications:updated', () => {
     try { renderNotifications(user); updateProfileNotifBadge(user); } catch {}
   });
-
+ 
   document.getElementById('mark-all-read-btn')?.addEventListener('click', () => {
     markAllRead(user.id);
     try { renderNotifications(user); updateProfileNotifBadge(user); } catch {}
     toast.success('Done', 'All notifications marked as read');
   });
-
+ 
   document.getElementById('logout-btn')?.addEventListener('click', e => {
     e.preventDefault();
     logout();
   });
 });
-
+ 
 // ── Panel helpers ─────────────────────────────────────────────
 function activatePanel(panelId) {
   document.querySelectorAll('.profile-nav-link').forEach(l => l.classList.remove('active'));
@@ -238,7 +238,7 @@ function activatePanel(panelId) {
   if (link)  link.classList.add('active');
   if (panel) panel.style.display = '';
 }
-
+ 
 function initNav() {
   document.querySelectorAll('.profile-nav-link[data-panel]').forEach(link => {
     link.addEventListener('click', e => {
@@ -247,12 +247,12 @@ function initNav() {
     });
   });
 }
-
+ 
 // ── Orders ────────────────────────────────────────────────────
 async function renderOrders(user) {
   const container = document.getElementById('orders-list');
   if (!container) return;
-
+ 
   // ── Merge Supabase orders + localStorage orders ───────────────
   // Orders may land in localStorage when the Supabase INSERT fails
   // (RLS, network, session issues). We merge both sources so the
@@ -295,7 +295,7 @@ async function renderOrders(user) {
   } catch (e) {
     console.warn('[Profile] Supabase orders fetch failed:', e.message);
   }
-
+ 
   // ── SessionStorage fallback for locally-stored orders ───────────
   // If the checkout couldn't sync to Supabase (network/RLS/missing env vars),
   // the order is saved to sessionStorage as zm_last_order. We surface it here
@@ -318,7 +318,7 @@ async function renderOrders(user) {
       }
     }
   } catch (_) { /* ignore parse errors */ }
-
+ 
   // Merge: Supabase orders first (authoritative), then any local-only orders
   const orders = [...supabaseOrders, ...sessionOrders]
     .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
@@ -335,7 +335,7 @@ async function renderOrders(user) {
   const allProducts = await getProducts();
   const slugById = {};
   allProducts.forEach(p => { slugById[p.id] = p.slug; });
-
+ 
   const orderCards = await Promise.all(orders.map(async o => {
     const canReviewOrder = o.status === 'delivered';
     const itemsHtml = (await Promise.all((o.items || []).map(async item => {
@@ -361,7 +361,7 @@ async function renderOrders(user) {
           <div>${reviewBadge}</div>
         </div>`;
     }))).join('');
-
+ 
     return `
       <div class="order-card${o._localOnly ? ' order-card--local' : ''}">
         ${o._localOnly ? `
@@ -391,7 +391,7 @@ async function renderOrders(user) {
   }));
   container.innerHTML = orderCards.join('');
 }
-
+ 
 // ── Wishlist ──────────────────────────────────────────────────
 function renderWishlist() {
   const grid = document.getElementById('wishlist-grid');
@@ -422,20 +422,20 @@ function renderWishlist() {
       </div>
     </div>`).join('');
 }
-
+ 
 // ── Reviews ───────────────────────────────────────────────────
 function starsHtml(rating) {
   return Array.from({ length: 5 }, (_, i) =>
     `<i class="fa-${i < rating ? 'solid' : 'regular'} fa-star" style="color:var(--clr-warning);font-size:.75rem"></i>`
   ).join('');
 }
-
+ 
 function reviewStatusBadge(r) {
   if (r.approved) return `<span class="badge badge-success"><i class="fa-solid fa-circle-check"></i> Approved</span>`;
   if (r.rejected) return `<span class="badge badge-error"><i class="fa-solid fa-circle-xmark"></i> Not Approved</span>`;
   return `<span class="badge badge-warning"><i class="fa-solid fa-clock"></i> Pending Approval</span>`;
 }
-
+ 
 // ── Inline review form (used inside profile My Reviews panel) ─
 function buildInlineReviewForm({ user, productId, productName, productImg, slug, existing, isEdit, container, onSuccess }) {
   const formId    = `prf-rv-form-${productId}`;
@@ -444,24 +444,24 @@ function buildInlineReviewForm({ user, productId, productName, productImg, slug,
   const ratingId  = `prf-rv-rating-${productId}`;
   const titleId   = `prf-rv-title-${productId}`;
   const textId    = `prf-rv-text-${productId}`;
-
+ 
   const imgHtml = productImg
     ? `<img src="${productImg}" alt="${productName}" style="width:56px;height:56px;object-fit:cover;border-radius:8px;flex-shrink:0;">`
     : `<div style="width:56px;height:56px;border-radius:8px;background:var(--clr-surface-2);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="fa-solid fa-box" style="color:var(--clr-text-3)"></i></div>`;
-
+ 
   const starInputHtml = [1,2,3,4,5].map(n => `
     <button type="button" class="prf-star-btn" data-val="${n}" data-fid="${productId}" style="
       background:none;border:none;cursor:pointer;padding:.1rem .15rem;font-size:1.4rem;
       color:${existing && n <= existing.rating ? 'var(--clr-gold,#f59e0b)' : 'var(--clr-border)'};
       transition:color .12s;line-height:1;
     ">★</button>`).join('');
-
+ 
   const editNote = isEdit
     ? `<div style="padding:.5rem .75rem;background:rgba(243,156,18,.08);border:1px solid rgba(243,156,18,.25);border-radius:6px;font-size:.78rem;color:var(--clr-warning,#f59e0b);margin-bottom:.75rem;">
         <i class="fa-solid fa-triangle-exclamation" style="margin-right:.3rem;"></i>
         You can edit your review <strong>one time only</strong>. This edit is final.
        </div>` : '';
-
+ 
   container.innerHTML = `
     <div class="prf-inline-form" style="
       background:var(--clr-surface);border:1px solid var(--clr-gold,#f59e0b);border-radius:12px;
@@ -503,12 +503,12 @@ function buildInlineReviewForm({ user, productId, productName, productImg, slug,
         </button>
       </div>
     </div>`;
-
+ 
   // Rating stars interaction
   let selectedRating = existing ? existing.rating : 0;
   const ratingWrap = container.querySelector(`#${ratingId}`);
   const stars = ratingWrap ? Array.from(ratingWrap.querySelectorAll('.prf-star-btn')) : [];
-
+ 
   function paintStars(hoverVal) {
     stars.forEach(s => {
       const v = parseInt(s.dataset.val);
@@ -520,7 +520,7 @@ function buildInlineReviewForm({ user, productId, productName, productImg, slug,
     s.addEventListener('mouseleave', () => paintStars(0));
     s.addEventListener('click', () => { selectedRating = parseInt(s.dataset.val); paintStars(0); });
   });
-
+ 
   // Char counter
   const textarea = container.querySelector(`#${textId}`);
   const charEl   = container.querySelector(`#${charId}`);
@@ -529,38 +529,38 @@ function buildInlineReviewForm({ user, productId, productName, productImg, slug,
     textarea.addEventListener('input', update);
     update();
   }
-
+ 
   // Submit
   container.querySelector('.prf-rv-submit')?.addEventListener('click', () => {
     const errEl = container.querySelector(`#${errorId}`);
     const title = container.querySelector(`#${titleId}`)?.value || '';
     const text  = textarea?.value || '';
-
+ 
     if (!selectedRating) { errEl.textContent = 'Please select a star rating.'; return; }
     if (text.trim().length < 10) { errEl.textContent = 'Review must be at least 10 characters.'; return; }
     errEl.textContent = '';
-
+ 
     const result = isEdit
-      ? editReview({ productId, userId: user.id, rating: selectedRating, title, text })
-      : addReview({ productId, userId: user.id, userName: user.name, rating: selectedRating, title, text });
-
+      ? await editReview({ productId, userId: user.id, rating: selectedRating, title, text })
+      : await addReview({ productId, userId: user.id, userName: user.name, rating: selectedRating, title, text });
+ 
     if (!result.success) { errEl.textContent = result.error; return; }
-
+ 
     toast.success('Review submitted!', isEdit
       ? 'Your updated review is pending admin approval.'
       : 'Review submitted! It will appear once our team approves it.');
-
+ 
     onSuccess();
   });
-
+ 
   // Cancel — collapse back
   container.querySelector('.prf-rv-cancel')?.addEventListener('click', onSuccess);
 }
-
+ 
 async function renderMyReviews(user) {
   const container = document.getElementById('my-reviews-list');
   if (!container) return;
-
+ 
   // Build product lookup maps
   const allProducts = await getProducts();
   const slugById  = {};
@@ -571,17 +571,17 @@ async function renderMyReviews(user) {
     nameById[p.id] = p.name;
     imgById[p.id]  = (p.images || [])[0] || '';
   });
-
+ 
   function reRender() { renderMyReviews(user); }
-
+ 
   // All reviews this user has submitted
   const reviews      = await getUserReviews(user.id);
   const reviewedPids = new Set(reviews.map(r => r.productId));
-
+ 
   // Count badge on nav
   const countEl = document.getElementById('my-reviews-count');
   if (countEl) countEl.textContent = reviews.length ? String(reviews.length) : '';
-
+ 
   // Products from delivered orders NOT yet reviewed → "Ready to Review"
   // Merge Supabase + localStorage (same strategy as renderOrders)
   let _sbDelivered = [];
@@ -611,7 +611,7 @@ async function renderMyReviews(user) {
       });
     });
   });
-
+ 
   // Empty state
   if (!reviews.length && !pendingItems.length) {
     container.innerHTML = `
@@ -623,7 +623,7 @@ async function renderMyReviews(user) {
       </div>`;
     return;
   }
-
+ 
   // ── "Ready to Review" section ───────────────────────────────
   let readyHtml = '';
   if (pendingItems.length) {
@@ -648,7 +648,7 @@ async function renderMyReviews(user) {
           <div class="prf-form-slot" id="prf-slot-${item.productId}"></div>
         </div>`;
     }).join('');
-
+ 
     readyHtml = `
       <div class="reviews-section">
         <div class="reviews-section__title">
@@ -659,7 +659,7 @@ async function renderMyReviews(user) {
         <div class="pending-reviews">${itemsHtml}</div>
       </div>`;
   }
-
+ 
   // ── Submitted reviews ───────────────────────────────────────
   let submittedHtml = '';
   if (reviews.length) {
@@ -702,7 +702,7 @@ async function renderMyReviews(user) {
           <div class="prf-edit-slot" id="prf-edit-slot-${r.productId}"></div>
         </div>`;
     }).join('');
-
+ 
     submittedHtml = `
       <div class="reviews-section">
         <div class="reviews-section__title">
@@ -713,9 +713,9 @@ async function renderMyReviews(user) {
         ${cardsHtml}
       </div>`;
   }
-
+ 
   container.innerHTML = readyHtml + submittedHtml;
-
+ 
   // ── Wire up "Write Review" buttons ────────────────────────
   container.querySelectorAll('.prf-open-form').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -725,13 +725,13 @@ async function renderMyReviews(user) {
       const slug  = btn.dataset.slug;
       const slot  = document.getElementById(`prf-slot-${pid}`);
       if (!slot) return;
-
+ 
       // Toggle: if already open, close it
       if (slot.children.length > 0) { slot.innerHTML = ''; return; }
-
+ 
       // Scroll the parent item into view
       slot.parentElement?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-
+ 
       buildInlineReviewForm({
         user, productId: pid, productName: name, productImg: img, slug,
         existing: null, isEdit: false,
@@ -740,7 +740,7 @@ async function renderMyReviews(user) {
       });
     });
   });
-
+ 
   // ── Wire up "Edit" buttons ────────────────────────────────
   container.querySelectorAll('.prf-open-edit').forEach(btn => {
     btn.addEventListener('click', async () => {
@@ -751,11 +751,11 @@ async function renderMyReviews(user) {
       const slot     = document.getElementById(`prf-edit-slot-${pid}`);
       const existing = await getUserReview(user.id, pid);
       if (!slot || !existing) return;
-
+ 
       if (slot.children.length > 0) { slot.innerHTML = ''; return; }
-
+ 
       slot.parentElement?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-
+ 
       buildInlineReviewForm({
         user, productId: pid, productName: name, productImg: img, slug,
         existing, isEdit: true,
@@ -765,7 +765,7 @@ async function renderMyReviews(user) {
     });
   });
 }
-
+ 
 // ── Addresses ─────────────────────────────────────────────────
 const SL_DISTRICTS = [
   'Colombo','Gampaha','Kalutara','Kandy','Matale','Nuwara Eliya',
@@ -778,7 +778,7 @@ const SL_PROVINCES = [
   'Western','Central','Southern','Northern','Eastern',
   'North Western','North Central','Uva','Sabaragamuwa',
 ];
-
+ 
 function districtOptions(selected = '') {
   return SL_DISTRICTS.map(d =>
     `<option value="${d}" ${d === selected ? 'selected' : ''}>${d}</option>`
@@ -789,7 +789,7 @@ function provinceOptions(selected = '') {
     `<option value="${p}" ${p === selected ? 'selected' : ''}>${p}</option>`
   ).join('');
 }
-
+ 
 function addressFormHTML(addr = null) {
   const v = (key, def = '') => addr ? (addr[key] || def) : def;
   return `
@@ -848,7 +848,7 @@ function addressFormHTML(addr = null) {
       </div>
     </div>`;
 }
-
+ 
 function getFormData(container) {
   const get = name => container.querySelector(`[name="${name}"]`)?.value?.trim() || '';
   const digits = get('phone').replace(/\D/g, '');
@@ -864,7 +864,7 @@ function getFormData(container) {
     zip:      get('zip'),
   };
 }
-
+ 
 function validateAddressForm(data) {
   if (!data.fullName) return 'Full name is required.';
   if (!data.phone)    return 'Phone number is required.';
@@ -876,23 +876,23 @@ function validateAddressForm(data) {
   if (!data.province) return 'Please select a province.';
   return null;
 }
-
+ 
 function labelIcon(label) {
   if (label === 'Work')  return 'fa-solid fa-briefcase';
   if (label === 'Other') return 'fa-solid fa-location-dot';
   return 'fa-solid fa-house';
 }
-
+ 
 async function renderAddresses(user) {
   const container = document.getElementById('addresses-list');
   const addBtn    = document.getElementById('add-address-btn');
   const addBtnEmpty = document.getElementById('add-address-empty-btn');
   if (!container) return;
-
+ 
   function reRender() { renderAddresses(user); }
-
+ 
   const addresses = await getAddresses(user.id);
-
+ 
   // ── Empty state ──
   if (!addresses.length) {
     container.innerHTML = `
@@ -905,7 +905,7 @@ async function renderAddresses(user) {
         </button>
       </div>
       <div id="addr-form-container"></div>`;
-
+ 
     document.getElementById('add-address-empty-btn')?.addEventListener('click', () => {
       openAddressModal(user, null, reRender);
     });
@@ -945,7 +945,7 @@ async function renderAddresses(user) {
             </div>
           </div>`).join('')}
       </div>`;
-
+ 
     // Wire actions
     container.querySelectorAll('.addr-set-default').forEach(btn => {
       btn.addEventListener('click', async () => {
@@ -954,7 +954,7 @@ async function renderAddresses(user) {
         reRender();
       });
     });
-
+ 
     container.querySelectorAll('.addr-edit').forEach(btn => {
       btn.addEventListener('click', async () => {
         const allAddrs = await getAddresses(user.id);
@@ -962,7 +962,7 @@ async function renderAddresses(user) {
         if (addr) openAddressModal(user, addr, reRender);
       });
     });
-
+ 
     container.querySelectorAll('.addr-delete').forEach(btn => {
       btn.addEventListener('click', () => {
         confirmModal({
@@ -980,16 +980,16 @@ async function renderAddresses(user) {
       });
     });
   }
-
+ 
   // Wire header "Add Address" button
   document.getElementById('add-address-btn')?.addEventListener('click', () => {
     openAddressModal(user, null, reRender);
   });
 }
-
+ 
 function openAddressModal(user, existing, onSave) {
   document.getElementById('addr-modal')?.remove();
-
+ 
   const isEdit = !!existing;
   const modal  = document.createElement('div');
   modal.id = 'addr-modal';
@@ -1016,19 +1016,19 @@ function openAddressModal(user, existing, onSave) {
         </button>
       </div>
     </div>`;
-
+ 
   document.body.appendChild(modal);
   requestAnimationFrame(() => modal.classList.add('open'));
-
+ 
   const close = () => {
     modal.classList.remove('open');
     setTimeout(() => modal.remove(), 280);
   };
-
+ 
   document.getElementById('addr-modal-close')?.addEventListener('click', close);
   document.getElementById('addr-modal-cancel')?.addEventListener('click', close);
   modal.addEventListener('click', e => { if (e.target === modal) close(); });
-
+ 
   // ── Phone: digits only, max 9 ──────────────────────────────
   const phoneInput = modal.querySelector('.ph-digits');
   if (phoneInput) {
@@ -1036,7 +1036,7 @@ function openAddressModal(user, existing, onSave) {
       phoneInput.value = phoneInput.value.replace(/\D/g, '').slice(0, 9);
     });
   }
-
+ 
   document.getElementById('addr-modal-save')?.addEventListener('click', async () => {
     const saveBtn = document.getElementById('addr-modal-save');
     const data  = getFormData(modal);
@@ -1050,7 +1050,7 @@ function openAddressModal(user, existing, onSave) {
     }
     errEl.style.display = 'none';
     if (saveBtn) { saveBtn.disabled = true; saveBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Saving…'; }
-
+ 
     try {
       if (isEdit) {
         await updateAddress(user.id, existing.id, data);
@@ -1069,7 +1069,7 @@ function openAddressModal(user, existing, onSave) {
     onSave();
   });
 }
-
+ 
 // ── Settings ──────────────────────────────────────────────────
 async function initSettings(user) {
   // ── Eye-toggle for all password fields ──────────────────────
@@ -1082,7 +1082,7 @@ async function initSettings(user) {
       btn.querySelector('i').className = show ? 'fa-regular fa-eye-slash' : 'fa-regular fa-eye';
     });
   });
-
+ 
   // ── Pre-fill current password (demo mode only) ───────────────
   try {
     import('./config.js').then(({ DEMO_MODE }) => {
@@ -1096,7 +1096,7 @@ async function initSettings(user) {
       }
     }).catch(() => {});
   } catch (_) { /* production — passwords never exposed */ }
-
+ 
   document.getElementById('profile-form')?.addEventListener('submit', async e => {
     e.preventDefault();
     const name  = document.getElementById('settings-name')?.value.trim() || '';
@@ -1108,7 +1108,7 @@ async function initSettings(user) {
       if (nameEl) nameEl.textContent = name;
     }
   });
-
+ 
   document.getElementById('password-form')?.addEventListener('submit', e => {
     e.preventDefault();
     const current = document.getElementById('current-pass')?.value || '';
@@ -1121,7 +1121,7 @@ async function initSettings(user) {
     document.getElementById('password-form').reset();
   });
 }
-
+ 
 // ── Notifications ─────────────────────────────────────────────
 async function updateProfileNotifBadge(user) {
   const badge = document.getElementById('profile-notif-badge');
@@ -1131,17 +1131,17 @@ async function updateProfileNotifBadge(user) {
   badge.textContent   = count > 9 ? '9+' : String(count);
   badge.style.display = count > 0 ? '' : 'none';
 }
-
+ 
 async function renderNotifications(user) {
   const list = document.getElementById('notifications-list');
   if (!list) return;
-
+ 
   // Show loading state while fetching
   list.innerHTML = `<div style="padding:2rem;text-align:center;color:var(--clr-text-3)"><i class="fa-solid fa-spinner fa-spin"></i> Loading notifications…</div>`;
-
+ 
   // FIXED: was missing `await` — getUserNotifications is async (Supabase fetch)
   const notifs = await getUserNotifications(user.id);
-
+ 
   if (!notifs.length) {
     list.innerHTML = `
       <div class="pnl-empty">
@@ -1151,7 +1151,7 @@ async function renderNotifications(user) {
       </div>`;
     return;
   }
-
+ 
   function timeAgo(iso) {
     if (!iso) return '';
     const diff  = Date.now() - new Date(iso).getTime();
@@ -1164,7 +1164,7 @@ async function renderNotifications(user) {
     if (days  < 7)  return `${days}d ago`;
     return new Date(iso).toLocaleDateString('en-LK', { day: 'numeric', month: 'short' });
   }
-
+ 
   list.innerHTML = notifs.map(n => {
     const { icon, color } = notifIcon(n.type);
     // FIXED: Supabase stores refId inside data.refId — support both shapes
@@ -1195,7 +1195,7 @@ async function renderNotifications(user) {
         </div>
       </div>`;
   }).join('');
-
+ 
   list.querySelectorAll('.notif-read-btn').forEach(btn => {
     btn.addEventListener('click', e => {
       e.stopPropagation();
@@ -1204,7 +1204,7 @@ async function renderNotifications(user) {
       updateProfileNotifBadge(user);
     });
   });
-
+ 
   list.querySelectorAll('.notif-del-btn').forEach(btn => {
     btn.addEventListener('click', e => {
       e.stopPropagation();
@@ -1213,7 +1213,7 @@ async function renderNotifications(user) {
       updateProfileNotifBadge(user);
     });
   });
-
+ 
   list.querySelectorAll('.notif-card').forEach(card => {
     card.addEventListener('click', () => {
       markRead(card.dataset.notifId);
@@ -1222,3 +1222,4 @@ async function renderNotifications(user) {
     });
   });
 }
+ 

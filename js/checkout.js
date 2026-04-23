@@ -662,15 +662,21 @@ function bindForm(cart) {
         // ── Upload bank slip to Supabase Storage ────────────────────
         // Do this synchronously here (inside the button-click handler)
         // so the slip URL is ready before we build the DB row.
-        if (slipDataUrl && !DEMO_MODE) {
-          btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Uploading slip…';
-          const slipUrl = await uploadBankSlipToStorage(slipDataUrl, order.id);
-          if (slipUrl) {
-            order.paymentSlip = slipUrl;
-            console.log('[Checkout] Bank slip uploaded:', slipUrl);
+        if (slipDataUrl) {
+          if (DEMO_MODE) {
+            // In demo mode, store the base64 data URL directly
+            order.paymentSlip = slipDataUrl;
           } else {
-            // Upload failed — warn but do NOT block the order
-            console.warn('[Checkout] Slip upload failed; order will save without slip URL.');
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Uploading slip…';
+            const slipUrl = await uploadBankSlipToStorage(slipDataUrl, order.id);
+            if (slipUrl) {
+              order.paymentSlip = slipUrl;
+              console.log('[Checkout] Bank slip uploaded:', slipUrl);
+            } else {
+              // Upload failed — fall back to base64 so slip is not lost
+              order.paymentSlip = slipDataUrl;
+              console.warn('[Checkout] Slip upload failed; storing base64 fallback.');
+            }
           }
         }
 
