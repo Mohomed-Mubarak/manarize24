@@ -15,7 +15,7 @@
      await AdminAPI.reviews.approve('rev-456');
    ============================================================ */
 
-import { DEMO_MODE, ADMIN_API_TOKEN } from './config.js';
+import { DEMO_MODE } from './config.js';
 
 // ── Token management ─────────────────────────────────────────────
 // The admin token is stored in sessionStorage after admin login.
@@ -28,9 +28,9 @@ export function setAdminToken(token) {
 }
 
 export function getAdminToken() {
-  // Prefer sessionStorage (set after login); fall back to the env token so
-  // admin API calls work even after a tab-close/reopen without re-login.
-  return sessionStorage.getItem(TOKEN_KEY) || ADMIN_API_TOKEN || '';
+  // Token is set in sessionStorage after admin login via setAdminToken().
+  // It is never read from a static env variable — the token is server-only.
+  return sessionStorage.getItem(TOKEN_KEY) || '';
 }
 
 export function clearAdminToken() {

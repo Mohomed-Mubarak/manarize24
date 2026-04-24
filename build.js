@@ -110,7 +110,7 @@ const env = {
   // plaintext password must never appear in the browser-readable bundle.
   ADMIN_PASSWORD:      demoMode ? get('ADMIN_PASSWORD', '') : '',
   PAYHERE_MERCHANT_ID: get('PAYHERE_MERCHANT_ID',  'YOUR_MERCHANT_ID'),
-  PAYHERE_SANDBOX:     get('PAYHERE_SANDBOX',      'false') !== 'false',
+  PAYHERE_SANDBOX:     get('PAYHERE_SANDBOX',      'true') !== 'false',
   WA_PHONE:            get('WA_PHONE',             ''),
   WA_PHONE_2:          get('WA_PHONE_2',           ''),
   POSTHOG_KEY:         get('POSTHOG_KEY',          ''),
@@ -122,9 +122,9 @@ const env = {
   // hCaptcha — site key is PUBLIC (safe in browser bundle)
   // Secret key lives only in Vercel env vars (server-side /api routes)
   HCAPTCHA_SITE_KEY:   get('HCAPTCHA_SITE_KEY',   '10000000-ffff-ffff-ffff-000000000001'),
-  // Exposed so admin JS can authenticate calls to /api/admin/* endpoints.
-  // The admin panel itself is password-gated — this matches that security level.
-  ADMIN_API_TOKEN:     get('ADMIN_API_TOKEN',     ''),
+  // SECURITY: ADMIN_API_TOKEN is intentionally excluded from this public bundle.
+  // Admin API calls must authenticate via Supabase session JWT with role='admin'.
+  // See api/admin/* handlers: they verify req.headers['x-supabase-jwt'] server-side.
 };
  
 function jsStr(v) {
@@ -165,7 +165,7 @@ export const ENV = Object.freeze({
   EMAILJS_TEMPLATE_ID: \`${jsStr(env.EMAILJS_TEMPLATE_ID)}\`,
   EMAILJS_ADMIN_EMAIL: \`${jsStr(env.EMAILJS_ADMIN_EMAIL)}\`,
   HCAPTCHA_SITE_KEY:   \`${jsStr(env.HCAPTCHA_SITE_KEY)}\`,
-  ADMIN_API_TOKEN:     \`${jsStr(env.ADMIN_API_TOKEN)}\`,
+  // ADMIN_API_TOKEN intentionally omitted — server-only secret, never in browser bundle.
 });
 `;
  

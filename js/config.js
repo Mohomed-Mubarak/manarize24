@@ -22,7 +22,9 @@ export const DEMO_MODE = ENV.DEMO_MODE;
 // In production these are unused — Supabase handles all auth.
 export const ADMIN_EMAIL     = ENV.ADMIN_EMAIL;
 export const ADMIN_PASSWORD  = ENV.ADMIN_PASSWORD;
-export const ADMIN_API_TOKEN = ENV.ADMIN_API_TOKEN;
+// SECURITY: ADMIN_API_TOKEN is intentionally not exported from config.js.
+// It is a server-only secret managed via Vercel environment variables.
+// Admin API authentication uses Supabase session JWTs — see js/admin-api.js.
 
 // ── PayHere ──────────────────────────────────────────────────
 export const PAYHERE_MERCHANT_ID = ENV.PAYHERE_MERCHANT_ID;

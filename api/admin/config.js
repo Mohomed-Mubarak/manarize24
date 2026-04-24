@@ -36,9 +36,23 @@ function getAdminClient() {
 
 // ── CORS headers ──────────────────────────────────────────────
 function cors(res) {
-  res.setHeader('Access-Control-Allow-Origin',  process.env.SITE_URL || '*');
+  const origin = process.env.SITE_URL || null;
+  if (origin) res.setHeader('Access-Control-Allow-Origin', origin);
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Admin-Token');
+}
+
+// ── Auth check ────────────────────────────────────────────────
+function isAuthorised(req) {
+  const token    = req.headers['x-admin-token'] || '';
+  const expected = process.env.ADMIN_API_TOKEN  || '';
+  if (!token || !expected) return false;
+  try {
+    return require('crypto').timingSafeEqual(
+      Buffer.from(token),
+      Buffer.from(expected)
+    );
+  } catch { return false; }
 }
 
 // ── Body parser ───────────────────────────────────────────────
@@ -57,6 +71,7 @@ function readBody(req) {
 // ── PBKDF2 verification (mirrors browser security-utils.js) ───
 // Format stored: "pbkdf2:<hex-salt>:<hex-hash>"
 // Iterations: 310,000  |  Hash: SHA-256  |  Key length: 32 bytes
+// Legacy sha256/plaintext formats are intentionally no longer accepted.
 function verifyPbkdf2(plain, stored) {
   return new Promise(resolve => {
     if (!plain || !stored) return resolve(false);
@@ -73,14 +88,8 @@ function verifyPbkdf2(plain, stored) {
       return;
     }
 
-    // Legacy sha256 (unsalted) — still accept for backward-compat
-    if (stored.startsWith('sha256:')) {
-      const hash = crypto.createHash('sha256').update(plain).digest('hex');
-      return resolve('sha256:' + hash === stored);
-    }
-
-    // Very old plain-text
-    resolve(plain === stored);
+    // Reject any non-PBKDF2 format — legacy sha256/plaintext are insecure.
+    resolve(false);
   });
 }
 
@@ -96,8 +105,11 @@ module.exports = async function handler(req, res) {
     return res.status(500).json({ error: 'Server configuration error.' });
   }
 
-  // ── GET — return stored value ─────────────────────────────────
+  // ── GET — return stored value (requires auth) ─────────────────
   if (req.method === 'GET') {
+    if (!isAuthorised(req)) {
+      return res.status(401).json({ error: 'Unauthorised.' });
+    }
     const key = req.query?.key;
     if (!key) return res.status(400).json({ error: 'Missing key.' });
 

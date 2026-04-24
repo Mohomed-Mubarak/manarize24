@@ -34,7 +34,7 @@ function getServiceClient() {
 }
 
 function cors(res) {
-  res.setHeader('Access-Control-Allow-Origin', process.env.SITE_URL || '*');
+  const __origin = process.env.SITE_URL || null; if (__origin) res.setHeader('Access-Control-Allow-Origin', __origin);
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 }

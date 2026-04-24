@@ -49,7 +49,7 @@ async function readJson(req) {
 
 // ── CORS headers ─────────────────────────────────────────────────
 function cors(res) {
-  res.setHeader('Access-Control-Allow-Origin', process.env.SITE_URL || '*');
+  const __origin = process.env.SITE_URL || null; if (__origin) res.setHeader('Access-Control-Allow-Origin', __origin);
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Admin-Token');
 }

@@ -13,7 +13,7 @@
 
    Session storage: sessionStorage (auto-clears on window close/tab kill)
    ============================================================ */
-import { LS, ADMIN_EMAIL, ADMIN_PASSWORD, ADMIN_API_TOKEN } from '../config.js';
+import { LS, ADMIN_EMAIL, ADMIN_PASSWORD } from '../config.js';
 import { setAdminToken, clearAdminToken } from '../admin-api.js';
 import {
   hashPassword, verifyPassword,
@@ -29,16 +29,16 @@ async function getActivePasswordHash() {
     const res = await fetch('/api/admin/config?key=password_hash');
     if (res.ok) {
       const { value } = await res.json();
-      if (value) { localStorage.setItem(PW_KEY, value); return value; }
+      if (value) { sessionStorage.setItem(PW_KEY, value); return value; }
     }
   } catch { /* offline */ }
 
   try {
-    const cached = localStorage.getItem(PW_KEY);
+    const cached = sessionStorage.getItem(PW_KEY);
     if (cached) return cached;
     if (!ADMIN_PASSWORD) return null;
     const h = await hashPassword(ADMIN_PASSWORD);
-    localStorage.setItem(PW_KEY, h);
+    sessionStorage.setItem(PW_KEY, h);
     return h;
   } catch { return null; }
 }
@@ -82,7 +82,7 @@ export async function adminLogin(email, password) {
     clearFailedAttempts();
     const session = { email, role: 'admin', name: 'Admin User', loginAt: Date.now() };
     sessionStorage.setItem(LS.adminSession, JSON.stringify(session));
-    setAdminToken(ADMIN_API_TOKEN);
+    // Token not set client-side — ADMIN_API_TOKEN is server-only.
     return { success: true, session };
   }
 
@@ -197,7 +197,7 @@ export async function handleMagicLinkCallback() {
         loginAt:    Date.now(),
       };
       sessionStorage.setItem(LS.adminSession, JSON.stringify(adminSession));
-      setAdminToken(ADMIN_API_TOKEN);
+      // Token not set client-side — ADMIN_API_TOKEN is server-only.
 
       // Clean URL — remove hash so back/reload won't re-trigger
       history.replaceState(null, '', window.location.pathname + window.location.search);
@@ -241,7 +241,7 @@ export async function changeAdminPassword(currentPw, newPw) {
     console.warn('[ZenMarket] Admin config API unavailable — saving to localStorage only.');
   }
 
-  localStorage.setItem(PW_KEY, newHash);
+  sessionStorage.setItem(PW_KEY, newHash);
   sessionStorage.removeItem(LS.adminSession);
   clearAdminToken();
   return { success: true };
