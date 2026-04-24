@@ -110,8 +110,11 @@ export function prefetchOnHover(selector = 'a[href]') {
   document.addEventListener('mouseover', e => {
     const link = e.target.closest(selector);
     if (!link) return;
-    const href = link.getAttribute('href');
-    if (!href || href.startsWith('#') || href.startsWith('javascript') || prefetched.has(href)) return;
+    const rawHref = link.getAttribute('href');
+    if (!rawHref || rawHref.startsWith('#') || rawHref.startsWith('javascript')) return;
+    // Strip .html extension — Vercel cleanUrls redirects .html → clean URL (308)
+    const href = rawHref.replace(/\.html(?=\?|#|$)/, '');
+    if (prefetched.has(href)) return;
     prefetched.add(href);
 
     const el = document.createElement('link');

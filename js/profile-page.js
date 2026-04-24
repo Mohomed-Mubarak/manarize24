@@ -531,7 +531,7 @@ function buildInlineReviewForm({ user, productId, productName, productImg, slug,
   }
  
   // Submit
-  container.querySelector('.prf-rv-submit')?.addEventListener('click', () => {
+  container.querySelector('.prf-rv-submit')?.addEventListener('click', async () => {
     const errEl = container.querySelector(`#${errorId}`);
     const title = container.querySelector(`#${titleId}`)?.value || '';
     const text  = textarea?.value || '';

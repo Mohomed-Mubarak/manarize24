@@ -773,6 +773,12 @@ textarea.form-control {
   font-size: var(--fs-sm);
   padding: 0 var(--sp-2);
   height: 36px;
+  -moz-appearance: textfield;
+}
+.qty-input::-webkit-outer-spin-button,
+.qty-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
 
 /* ── SEARCH BAR ──────────────────────────────────────────── */

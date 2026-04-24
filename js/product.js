@@ -196,7 +196,7 @@ function renderProduct(p) {
     qty = Math.min(p.stock || 99, qty + 1);
     qtyInput.value = qty;
   });
-  qtyInput?.addEventListener('change', () => {
+  qtyInput?.addEventListener('input', () => {
     qty = Math.max(1, Math.min(parseInt(qtyInput.value) || 1, p.stock || 99));
     qtyInput.value = qty;
   });
