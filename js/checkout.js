@@ -35,8 +35,8 @@ const DEFAULT_BANK = {
 document.addEventListener('DOMContentLoaded', async () => {
   // ── Auth guard (hard wall — no guest checkout) ────────────
   if (!isLoggedIn()) {
-    sessionStorage.setItem('zm_return_url', 'checkout.html');
-    window.location.href = 'login.html?next=checkout.html';
+    sessionStorage.setItem('zm_return_url', '/checkout');
+    window.location.href = '/login?next=/checkout';
     return;
   }
 
@@ -44,7 +44,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Redirect to cart if empty
   if (!cart.length) {
-    window.location.href = 'cart.html';
+    window.location.href = '/cart';
     return;
   }
 
@@ -556,8 +556,8 @@ function bindForm(cart) {
     const user = getCurrentUser();
     if (!user || !user.id) {
       toast.error('Session expired', 'Please log in again to place your order.');
-      sessionStorage.setItem('zm_return_url', 'checkout.html');
-      setTimeout(() => window.location.href = 'login.html?next=checkout.html', 1200);
+      sessionStorage.setItem('zm_return_url', '/checkout');
+      setTimeout(() => window.location.href = '/login?next=/checkout', 1200);
       return;
     }
 
@@ -972,7 +972,7 @@ function bindForm(cart) {
       try { sessionStorage.removeItem('zm_cart_discount'); } catch {}
 
       // Redirect to success page
-      window.location.href = `order-success.html?id=${encodeURIComponent(order.id)}`;
+      window.location.href = `/order-success?id=${encodeURIComponent(order.id)}`;
 
     } catch (err) {
       const msg = err?.message || String(err) || 'Unknown error';
@@ -983,7 +983,7 @@ function bindForm(cart) {
         if (saved) {
           const o = JSON.parse(saved);
           if (o && o.id) {
-            window.location.href = 'order-success.html?id=' + encodeURIComponent(o.id);
+            window.location.href = '/order-success?id=' + encodeURIComponent(o.id);
             return;
           }
         }

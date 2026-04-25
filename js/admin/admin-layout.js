@@ -70,7 +70,7 @@ export async function injectAdminLayout(pageTitle = 'Dashboard') {
 
   const session = getAdminSession();
   if (!session) {
-    window.location.href = 'index.html';
+    window.location.href = '/';
     return;
   }
 
@@ -351,7 +351,7 @@ export async function injectAdminLayout(pageTitle = 'Dashboard') {
             const ic = iconMap[n.type] || iconMap.default;
             // FIXED: Supabase stores refId inside data.refId — support both shapes
             const refId = n.data?.refId || n.refId || null;
-            const link = refId ? `order-detail.html?id=${encodeURIComponent(refId)}` : null;
+            const link = refId ? `/admin/order-detail?id=${encodeURIComponent(refId)}` : null;
             // FIXED: Supabase returns created_at (snake_case); fall back to camelCase
             const ts = n.created_at || n.createdAt || null;
             return `
@@ -391,7 +391,7 @@ export async function injectAdminLayout(pageTitle = 'Dashboard') {
         const allNotifs = await getAdminNotifications();
         const notif = allNotifs.find(n => n.id === id);
         const refId = notif?.data?.refId || notif?.refId || null;
-        if (refId) window.location.href = `order-detail.html?id=${encodeURIComponent(refId)}`;
+        if (refId) window.location.href = `/admin/order-detail?id=${encodeURIComponent(refId)}`;
         else closeDropdown();
       });
     });

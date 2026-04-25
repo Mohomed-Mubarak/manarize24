@@ -146,9 +146,9 @@ function bindCheckoutGuard() {
     e.preventDefault();
     toast.info('Sign in required', 'Please log in or create an account to continue.');
     // Save destination so login page can redirect back after auth
-    sessionStorage.setItem('zm_return_url', 'checkout.html');
+    sessionStorage.setItem('zm_return_url', '/checkout');
     setTimeout(() => {
-      window.location.href = 'login.html?next=checkout.html';
+      window.location.href = '/login?next=/checkout';
     }, 700);
   });
 }

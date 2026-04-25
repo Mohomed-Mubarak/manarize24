@@ -546,7 +546,7 @@ export async function logout() {
   const sb = getSupabase();
   if (sb) await sb.auth.signOut();
   clearSession();
-  window.location.href = 'login.html';
+  window.location.href = '/login';
 }
 
 // ── Profile update ────────────────────────────────────────────
@@ -671,7 +671,7 @@ function _syncDefaultAddressToUsersStore(userId, addresses) {
 export function requireAdmin() {
   const session = JSON.parse(localStorage.getItem(LS.adminSession) || 'null');
   if (!session || session.role !== 'admin') {
-    window.location.href = 'login.html';
+    window.location.href = '/login';
     return false;
   }
   return true;
@@ -695,7 +695,7 @@ export function adminLogin(_email, _password) {
 
 export function adminLogout() {
   localStorage.removeItem(LS.adminSession);
-  window.location.href = 'login.html';
+  window.location.href = '/login';
 }
 
 // ── Auth UI helpers ───────────────────────────────────────────

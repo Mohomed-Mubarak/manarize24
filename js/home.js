@@ -34,7 +34,7 @@ withLoader(async () => {
   );
   document.getElementById('hero-search-btn')?.addEventListener('click', () => {
     const q = document.getElementById('hero-search-input')?.value.trim();
-    if (q) window.location.href = `search.html?q=${encodeURIComponent(q)}`;
+    if (q) window.location.href = `search?q=${encodeURIComponent(q)}`;
   });
   await initCountdown();
   await renderHomepageReviews();
@@ -131,7 +131,7 @@ async function initCountdown() {
   const title = _g('promoTitle', 'Mega Sale — Up to 30% Off');
   const desc = _g('promoDesc', "Don't miss out on our biggest sale of the season. Premium products at unbeatable prices.");
   const btnText = _g('promoBtnText', 'Shop the Sale');
-  const btnUrl = _g('promoBtnUrl', 'shop.html');
+  const btnUrl = _g('promoBtnUrl', '/shop');
   const endDateStr = _g('promoEndDate', '');
 
   // Update banner text content

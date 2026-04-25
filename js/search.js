@@ -36,7 +36,7 @@ export function initQuickSearch(inputEl, dropdownEl) {
 
   inputEl.addEventListener('keydown', e => {
     if (e.key === 'Enter' && inputEl.value.trim()) {
-      window.location.href = `search.html?q=${encodeURIComponent(inputEl.value.trim())}`;
+      window.location.href = `search?q=${encodeURIComponent(inputEl.value.trim())}`;
     }
     if (e.key === 'Escape') { dropdownEl.hidden = true; }
   });
@@ -64,7 +64,7 @@ function renderQuickResults(results, query, el) {
       </div>
     </a>
   `).join('') +
-  `<a href="search.html?q=${encodeURIComponent(query)}" class="quick-result-all">
+  `<a href="search?q=${encodeURIComponent(query)}" class="quick-result-all">
     See all results for &ldquo;<strong>${safeQuery}</strong>&rdquo; →
   </a>`;
   el.hidden = false;

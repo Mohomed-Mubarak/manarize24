@@ -325,7 +325,7 @@ function renderOrderDetail() {
     if (!ok) return;
     await deleteOrder(order.id);
     toast.success('Deleted', `Order ${order.id} has been removed`);
-    setTimeout(() => window.location.href = 'orders.html', 700);
+    setTimeout(() => window.location.href = '/admin/orders', 700);
   });
 
   // Edit button

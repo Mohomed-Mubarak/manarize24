@@ -16,7 +16,7 @@ function esc(str) {
 withLoader(async () => {
   // ── Auth guard — only logged-in users can view orders ────────
   if (!isLoggedIn()) {
-    window.location.href = 'login.html?next=' + encodeURIComponent(window.location.href);
+    window.location.href = '/login?next=' + encodeURIComponent(window.location.href);
     return;
   }
 
@@ -86,8 +86,8 @@ withLoader(async () => {
     document.querySelector('.success-icon i').className     = 'fa-solid fa-circle-exclamation';
     document.querySelector('.success-icon').style.color     = 'var(--clr-warning)';
     document.querySelector('.order-actions').innerHTML      =
-      `<a href="profile.html" class="btn btn-primary"><i class="fa-regular fa-circle-user"></i> View My Orders</a>
-       <a href="shop.html" class="btn btn-ghost"><i class="fa-solid fa-store"></i> Continue Shopping</a>`;
+      `<a href="/profile" class="btn btn-primary"><i class="fa-regular fa-circle-user"></i> View My Orders</a>
+       <a href="/shop" class="btn btn-ghost"><i class="fa-solid fa-store"></i> Continue Shopping</a>`;
     return;
   }
 

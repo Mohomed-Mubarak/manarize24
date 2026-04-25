@@ -135,11 +135,11 @@ export function bindCardEvents(container, allProducts, addToCartFn, toggleWishli
         addToCartFn(p);
         if (isLoggedIn()) {
           // Already signed in → go straight to cart
-          window.location.href = 'cart.html';
+          window.location.href = '/cart';
         } else {
           // Not signed in → preserve cart destination, send to login
-          try { sessionStorage.setItem('zm_return_url', 'cart.html'); } catch { /* ignore */ }
-          window.location.href = 'login.html?next=cart.html';
+          try { sessionStorage.setItem('zm_return_url', '/cart'); } catch { /* ignore */ }
+          window.location.href = '/login?next=/cart';
         }
       }
       return;

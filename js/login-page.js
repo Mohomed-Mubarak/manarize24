@@ -36,7 +36,7 @@ function getReturnUrl() {
       if (s) return s;
     }
   } catch { /* ignore */ }
-  return 'profile.html';
+  return '/profile';
 }
 
 // ── Boot ──────────────────────────────────────────────────────
@@ -145,7 +145,7 @@ async function _showEmailLinkCallback() {
     }, 900);
   } else {
     document.getElementById('ecb-title').textContent = 'Link expired or invalid';
-    document.getElementById('ecb-sub').innerHTML = 'This link has expired. <a href="login.html" style="color:var(--clr-gold)">Go back to login</a> and try again.';
+    document.getElementById('ecb-sub').innerHTML = 'This link has expired. <a href="/login" style="color:var(--clr-gold)">Go back to login</a> and try again.';
     box.querySelector('i').className = 'fa-solid fa-circle-xmark';
     box.querySelector('i').style.color = 'var(--clr-error, #ef4444)';
   }
@@ -181,7 +181,7 @@ function _showMagicLinkPending(email) {
       Resend verification link
     </button>
     <div>
-      <a href="login.html" style="font-size:.8125rem;color:var(--clr-gold)">
+      <a href="/login" style="font-size:.8125rem;color:var(--clr-gold)">
         ← Back to sign in
       </a>
     </div>
@@ -358,7 +358,7 @@ function _showMagicLinkSent(email) {
       Resend magic link
     </button>
     <div>
-      <a href="login.html" style="font-size:.8125rem;color:var(--clr-gold)">
+      <a href="/login" style="font-size:.8125rem;color:var(--clr-gold)">
         ← Use a different email
       </a>
     </div>

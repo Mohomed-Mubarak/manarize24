@@ -41,15 +41,16 @@ function esc(str) {
   return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 export const NAV_LINKS = [
-  { href: 'index.html',              label: 'Home'         },
-  { href: 'shop.html',               label: 'Shop'         },
-  { href: 'shop.html?badge=new',     label: 'New Arrivals', badge: 'new' },
-  { href: 'shop.html?condition=used',label: 'Second Hand',  badge: 'used' },
-  { href: 'contact.html',            label: 'Contact'      },
+  { href: '/',              label: 'Home'         },
+  { href: 'shop',               label: 'Shop'         },
+  { href: 'shop?badge=new',     label: 'New Arrivals', badge: 'new' },
+  { href: 'shop?condition=used',label: 'Second Hand',  badge: 'used' },
+  { href: 'contact',            label: 'Contact'      },
 ];
 
 export function navbarHTML(activePage = '') {
-  const currentFile = window.location.pathname.split('/').pop() || 'index.html';
+  const _pathParts = window.location.pathname.split('/').filter(Boolean);
+  const currentFile = (_pathParts[_pathParts.length - 1] || '').replace(/\.html$/, '') || '';
   const currentSearch = new URLSearchParams(window.location.search);
 
   // Read free shipping threshold from admin settings
@@ -61,10 +62,12 @@ export function navbarHTML(activePage = '') {
   const freeShipLabel = `Rs. ${freeShipThreshold.toLocaleString()}`;
 
   const links = NAV_LINKS.map(l => {
-    let isActive = activePage === l.label || currentFile === l.href;
+    const _hrefClean = l.href === '/' ? '' : l.href.replace(/^\//, '');
+    let isActive = activePage === l.label || currentFile === _hrefClean ||
+      (l.href === '/' && (currentFile === '' || window.location.pathname === '/'));
     // Highlight "New Arrivals" when on shop with badge=new
-    if (l.badge === 'new'  && currentFile === 'shop.html' && currentSearch.get('badge') === 'new')  isActive = true;
-    if (l.badge === 'used' && currentFile === 'shop.html' && currentSearch.get('condition') === 'used') isActive = true;
+    if (l.badge === 'new'  && currentFile === 'shop' && currentSearch.get('badge') === 'new')  isActive = true;
+    if (l.badge === 'used' && currentFile === 'shop' && currentSearch.get('condition') === 'used') isActive = true;
     const extra = l.badge === 'new'  ? ' nav-link--new'
                 : l.badge === 'used' ? ' nav-link--used' : '';
     return `<a href="${l.href}" class="nav-link${extra}${isActive ? ' active' : ''}">${l.label}</a>`;
@@ -80,7 +83,7 @@ export function navbarHTML(activePage = '') {
   return `
   <div class="announcement-bar" id="announcement-bar">
     🚀 Free shipping on orders over ${freeShipLabel} across Sri Lanka &nbsp;·&nbsp;
-    <a href="shop.html">Shop Now</a>
+    <a href="/shop">Shop Now</a>
     <button class="announcement-close" id="ann-close" aria-label="Close">
       <i class="fa-solid fa-xmark"></i>
     </button>
@@ -88,7 +91,7 @@ export function navbarHTML(activePage = '') {
 
   <nav class="navbar" id="main-navbar">
     <div class="container navbar-inner">
-      <a href="index.html" class="navbar-logo">Zen<span>Market</span></a>
+      <a href="/" class="navbar-logo">Zen<span>Market</span></a>
 
       <div class="navbar-links">${links}</div>
 
@@ -105,7 +108,7 @@ export function navbarHTML(activePage = '') {
       </div>
 
       <div class="navbar-actions">
-        <a href="wishlist.html" class="nav-icon-btn" aria-label="Wishlist" id="navbar-wishlist-btn" style="position:relative">
+        <a href="/wishlist" class="nav-icon-btn" aria-label="Wishlist" id="navbar-wishlist-btn" style="position:relative">
           <i class="fa-regular fa-heart"></i>
           <span class="badge-count" id="wish-count" style="display:none"></span>
         </a>
@@ -123,7 +126,7 @@ export function navbarHTML(activePage = '') {
               </div>
             </div>
             <hr class="npd-divider">
-            <a href="profile.html" class="npd-item" role="menuitem"><i class="fa-regular fa-user"></i> My Profile</a>
+            <a href="/profile" class="npd-item" role="menuitem"><i class="fa-regular fa-user"></i> My Profile</a>
             <a href="profile.html?panel=orders" class="npd-item" role="menuitem"><i class="fa-regular fa-bag-shopping"></i> My Orders</a>
             <a href="profile.html?panel=wishlist" class="npd-item" role="menuitem"><i class="fa-regular fa-heart"></i> Wishlist</a>
             <a href="profile.html?panel=settings" class="npd-item" role="menuitem"><i class="fa-regular fa-gear"></i> Settings</a>
@@ -139,7 +142,7 @@ export function navbarHTML(activePage = '') {
             border-radius:50%;width:16px;height:16px;display:none;align-items:center;
             justify-content:center;line-height:1"></span>
         </a>
-        <a href="cart.html" class="nav-icon-btn" aria-label="Cart" style="position:relative">
+        <a href="/cart" class="nav-icon-btn" aria-label="Cart" style="position:relative">
           <i class="fa-solid fa-cart-shopping"></i>
           <span class="badge-count cart-count" style="display:none">0</span>
         </a>
@@ -170,10 +173,10 @@ export function navbarHTML(activePage = '') {
       <div class="drawer-links">
         ${drawerLinks}
         <hr style="border-color:var(--clr-border);margin:.5rem 0">
-        <a href="profile.html" class="nav-link" id="drawer-account-link">
+        <a href="/profile" class="nav-link" id="drawer-account-link">
           <i class="fa-regular fa-circle-user"></i> <span id="drawer-account-label">My Account</span>
         </a>
-        <a href="cart.html" class="nav-link">
+        <a href="/cart" class="nav-link">
           <i class="fa-solid fa-cart-shopping"></i> Cart
         </a>
         <hr style="border-color:var(--clr-border);margin:.5rem 0">
@@ -204,7 +207,7 @@ export function footerHTML() {
     <div class="container">
       <div class="footer-grid">
         <div class="footer-brand">
-          <a class="logo" href="index.html">Zen<span>Market</span></a>
+          <a class="logo" href="/">Zen<span>Market</span></a>
           <p>Sri Lanka's premium online marketplace. Curated products, exceptional service, delivered to your door.</p>
           <div class="footer-socials">
             <a href="${safeUrl(fb)}"  class="social-icon" target="_blank" rel="noopener" aria-label="Facebook"><i class="fa-brands fa-facebook-f"></i></a>
@@ -217,7 +220,7 @@ export function footerHTML() {
         <div class="footer-col">
           <h5>Shop</h5>
           <div class="footer-links">
-            <a href="shop.html"><i class="fa-solid fa-chevron-right" style="font-size:.6rem"></i> All Products</a>
+            <a href="/shop"><i class="fa-solid fa-chevron-right" style="font-size:.6rem"></i> All Products</a>
             <a href="shop.html?cat=clothing"><i class="fa-solid fa-chevron-right" style="font-size:.6rem"></i> Clothing</a>
             <a href="shop.html?cat=sport-shoes"><i class="fa-solid fa-chevron-right" style="font-size:.6rem"></i> Sport Shoes</a>
             <a href="shop.html?cat=laptops"><i class="fa-solid fa-chevron-right" style="font-size:.6rem"></i> Laptops</a>
@@ -230,7 +233,7 @@ export function footerHTML() {
           <h5>Info</h5>
           <div class="footer-links">
             <a href="about.html"><i class="fa-solid fa-chevron-right" style="font-size:.6rem"></i> About Us</a>
-            <a href="blog.html"><i class="fa-solid fa-chevron-right" style="font-size:.6rem"></i> Blog</a>
+            <a href="/blog"><i class="fa-solid fa-chevron-right" style="font-size:.6rem"></i> Blog</a>
             <a href="faq.html"><i class="fa-solid fa-chevron-right" style="font-size:.6rem"></i> FAQ</a>
             <a href="contact.html"><i class="fa-solid fa-chevron-right" style="font-size:.6rem"></i> Contact</a>
             <a href="shipping-policy.html"><i class="fa-solid fa-chevron-right" style="font-size:.6rem"></i> Shipping Policy</a>
@@ -337,7 +340,7 @@ export async function injectLayout(options = {}) {
   const drawerSearchInput = document.getElementById('drawer-search-input');
   const doDrawerSearch = () => {
     const q = drawerSearchInput?.value.trim();
-    if (q) window.location.href = `search.html?q=${encodeURIComponent(q)}`;
+    if (q) window.location.href = `search?q=${encodeURIComponent(q)}`;
   };
   drawerSearchBtn?.addEventListener('click', doDrawerSearch);
   drawerSearchInput?.addEventListener('keydown', e => { if (e.key === 'Enter') doDrawerSearch(); });
@@ -502,7 +505,7 @@ function initNavbarSearch() {
           <i class="fa-solid fa-magnifying-glass"></i>
           No results for "<strong>${q}</strong>"
         </div>
-        <a href="search.html?q=${encodeURIComponent(q)}" class="nsd-all">
+        <a href="search?q=${encodeURIComponent(q)}" class="nsd-all">
           Browse all products →
         </a>`;
       dropdown.hidden = false;
@@ -518,7 +521,7 @@ function initNavbarSearch() {
         </div>
         <div class="nsd-price">${formatPrice(p.price)}</div>
       </a>`).join('') +
-      `<a href="search.html?q=${encodeURIComponent(q)}" class="nsd-all">
+      `<a href="search?q=${encodeURIComponent(q)}" class="nsd-all">
         See all results for "<strong>${esc(q)}</strong>" →
       </a>`;
     dropdown.hidden = false;
@@ -550,7 +553,7 @@ function initNavbarSearch() {
       e.preventDefault();
       const selected = items[selectedIdx];
       if (selected) selected.click();
-      else if (input.value.trim()) window.location.href = `search.html?q=${encodeURIComponent(input.value.trim())}`;
+      else if (input.value.trim()) window.location.href = `search?q=${encodeURIComponent(input.value.trim())}`;
     } else if (e.key === 'Escape') {
       closeDropdown();
       input.blur();
@@ -577,38 +580,40 @@ function initNavbarSearch() {
 // ── Mobile Bottom Navigation Bar ─────────────────────────────
 function injectMobileBottomNav() {
   // Only inject on mobile (CSS will also hide on desktop)
-  const currentFile = window.location.pathname.split('/').pop() || 'index.html';
+  const _pathParts = window.location.pathname.split('/').filter(Boolean);
+  const _mbParts2 = window.location.pathname.split('/').filter(Boolean);
+  const currentFile = (_mbParts2[_mbParts2.length - 1] || '').replace(/\.html$/, '') || '';
   const currentSearch = new URLSearchParams(window.location.search);
 
-  const isShop   = currentFile === 'shop.html';
-  const isHome   = currentFile === 'index.html' || currentFile === '';
-  const isCart   = currentFile === 'cart.html';
-  const isWish   = currentFile === 'wishlist.html';
-  const isSearch = currentFile === 'search.html';
+  const isShop   = currentFile === 'shop';
+  const isHome   = currentFile === 'index' || currentFile === '';
+  const isCart   = currentFile === 'cart';
+  const isWish   = currentFile === 'wishlist';
+  const isSearch = currentFile === 'search';
 
   const nav = document.createElement('nav');
   nav.className = 'mobile-bottom-nav';
   nav.setAttribute('aria-label', 'Mobile navigation');
   nav.innerHTML = `
-    <a href="index.html"   class="mbn-item${isHome   ? ' active' : ''}">
+    <a href="/"   class="mbn-item${isHome   ? ' active' : ''}">
       <i class="fa-solid fa-house"></i><span>Home</span>
     </a>
-    <a href="shop.html"    class="mbn-item${isShop && !currentSearch.get('badge') && !currentSearch.get('condition') ? ' active' : ''}">
+    <a href="/shop"    class="mbn-item${isShop && !currentSearch.get('badge') && !currentSearch.get('condition') ? ' active' : ''}">
       <i class="fa-solid fa-store"></i><span>Shop</span>
     </a>
-    <a href="search.html"  class="mbn-item${isSearch ? ' active' : ''}">
+    <a href="/search"  class="mbn-item${isSearch ? ' active' : ''}">
       <i class="fa-solid fa-magnifying-glass"></i><span>Search</span>
     </a>
-    <a href="wishlist.html" class="mbn-item${isWish   ? ' active' : ''}" id="mbn-wish">
+    <a href="/wishlist" class="mbn-item${isWish   ? ' active' : ''}" id="mbn-wish">
       <i class="fa-regular fa-heart"></i>
       <span>Saved</span>
     </a>
-    <a href="cart.html"    class="mbn-item${isCart   ? ' active' : ''}" id="mbn-cart">
+    <a href="/cart"    class="mbn-item${isCart   ? ' active' : ''}" id="mbn-cart">
       <i class="fa-solid fa-bag-shopping"></i>
       <span class="mbn-badge" id="mbn-cart-badge" style="display:none">0</span>
       <span>Cart</span>
     </a>
-    <a href="profile.html" class="mbn-item" id="mbn-profile">
+    <a href="/profile" class="mbn-item" id="mbn-profile">
       <i class="fa-regular fa-circle-user" id="mbn-profile-icon"></i><span>Account</span>
     </a>
   `;
@@ -666,7 +671,7 @@ function initProfileButton() {
 
     // ── Click profile icon → go directly to profile page ─────
     profileBtn?.addEventListener('click', () => {
-      window.location.href = 'profile.html';
+      window.location.href = '/profile';
     });
 
     // Sign out button (still wired in case dropdown is opened via keyboard)
@@ -682,7 +687,7 @@ function initProfileButton() {
   } else {
     // ── Guest: clicking profile icon → login page ─────────────
     profileBtn?.addEventListener('click', () => {
-      window.location.href = 'login.html';
+      window.location.href = '/login';
     });
 
     // ── Drawer & mobile bottom nav → login ───────────────────

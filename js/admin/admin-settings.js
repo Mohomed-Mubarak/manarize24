@@ -267,7 +267,7 @@ function bindPasswordChange() {
     if (result.success) {
       toast.success('Password Updated', 'Password changed. Please log in again with your new password.');
       // Session was invalidated by changeAdminPassword — redirect to login
-      setTimeout(() => { window.location.href = 'index.html'; }, 1800);
+      setTimeout(() => { window.location.href = '/'; }, 1800);
       ['pw-current', 'pw-new', 'pw-confirm'].forEach(id => {
         const el = document.getElementById(id);
         if (el) { el.value = ''; el.type = 'password'; }

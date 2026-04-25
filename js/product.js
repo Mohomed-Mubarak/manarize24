@@ -214,11 +214,11 @@ function renderProduct(p) {
     const session = getSession();
     if (session) {
       // Already logged in → straight to cart
-      window.location.href = 'cart.html';
+      window.location.href = '/cart';
     } else {
       // Not logged in → save cart destination, send to login
-      try { sessionStorage.setItem('zm_return_url', 'cart.html'); } catch { /* ignore */ }
-      window.location.href = 'login.html?next=cart.html';
+      try { sessionStorage.setItem('zm_return_url', '/cart'); } catch { /* ignore */ }
+      window.location.href = '/login?next=/cart';
     }
   });
 
@@ -410,7 +410,7 @@ async function renderReviewFormArea(p) {
         <p style="color:var(--clr-text-3);font-size:.875rem;margin:0">
           <i class="fa-regular fa-pen-to-square" style="margin-right:.4rem;color:var(--clr-gold)"></i>
           Want to share your experience?
-          <a href="login.html" style="color:var(--clr-gold);font-weight:600;margin-left:.25rem">Sign in to write a review</a>
+          <a href="/login" style="color:var(--clr-gold);font-weight:600;margin-left:.25rem">Sign in to write a review</a>
         </p>
       </div>`;
     return;
@@ -428,7 +428,7 @@ async function renderReviewFormArea(p) {
           <i class="fa-solid fa-truck" style="margin-right:.4rem;color:var(--clr-gold)"></i>
           Only customers with a <strong>delivered order</strong> for this product can write a review.
         </p>
-        <a href="cart.html" style="display:inline-flex;align-items:center;gap:.4rem;font-size:.8rem;font-weight:600;color:var(--clr-gold);text-decoration:none;padding:.4rem .85rem;border:1px solid var(--clr-gold);border-radius:999px;margin-top:.15rem;transition:background .2s" onmouseover="this.style.background='rgba(201,168,76,.1)'" onmouseout="this.style.background='transparent'">
+        <a href="/cart" style="display:inline-flex;align-items:center;gap:.4rem;font-size:.8rem;font-weight:600;color:var(--clr-gold);text-decoration:none;padding:.4rem .85rem;border:1px solid var(--clr-gold);border-radius:999px;margin-top:.15rem;transition:background .2s" onmouseover="this.style.background='rgba(201,168,76,.1)'" onmouseout="this.style.background='transparent'">
           <i class="fa-solid fa-bag-shopping"></i> Buy this product first
         </a>
       </div>`;

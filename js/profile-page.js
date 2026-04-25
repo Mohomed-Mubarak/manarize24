@@ -117,7 +117,7 @@ withLoader(async () => {
   // ── 1. Auth gate ──────────────────────────────────────────
   let authed = false;
   try { authed = await waitForSession(); } catch(e) { console.warn('[Profile] waitForSession error:', e); }
-  if (!authed) { window.location.href = 'login.html'; return; }
+  if (!authed) { window.location.href = '/login'; return; }
  
   // ── 2. Layout (nav + footer) ──────────────────────────────
   try { await injectLayout({}); } catch(e) { console.warn('[Profile] injectLayout error:', e); }
@@ -147,7 +147,7 @@ withLoader(async () => {
       }
     } catch(e) { console.warn('[Profile] session re-fetch error:', e); }
   }
-  if (!user) { window.location.href = 'login.html'; return; }
+  if (!user) { window.location.href = '/login'; return; }
  
   // Guarantee name and email are never empty strings
   if (!user.name)  user.name  = user.email?.split('@')[0] || 'My Account';
@@ -328,7 +328,7 @@ async function renderOrders(user) {
         <div class="pnl-empty__icon"><i class="fa-solid fa-bag-shopping"></i></div>
         <h3>No orders yet</h3>
         <p>Your order history will appear here once you place your first order.</p>
-        <a href="shop.html" class="btn btn-primary">Start Shopping</a>
+        <a href="/shop" class="btn btn-primary">Start Shopping</a>
       </div>`;
     return;
   }
@@ -347,9 +347,9 @@ async function renderOrders(user) {
         if (already && !editOk)
           reviewBadge = `<span class="badge badge-success"><i class="fa-solid fa-circle-check"></i> Reviewed</span>`;
         else if (already && editOk)
-          reviewBadge = `<a href="product.html?slug=${encodeURIComponent(slug)}&review=1" class="badge badge-warning"><i class="fa-solid fa-pen"></i> Edit</a>`;
+          reviewBadge = `<a href="/product?slug=${encodeURIComponent(slug)}&review=1" class="badge badge-warning"><i class="fa-solid fa-pen"></i> Edit</a>`;
         else
-          reviewBadge = `<a href="product.html?slug=${encodeURIComponent(slug)}&review=1" class="badge badge-gold"><i class="fa-solid fa-star"></i> Review</a>`;
+          reviewBadge = `<a href="/product?slug=${encodeURIComponent(slug)}&review=1" class="badge badge-gold"><i class="fa-solid fa-star"></i> Review</a>`;
       }
       return `
         <div class="order-item">
@@ -383,7 +383,7 @@ async function renderOrders(user) {
         </div>
         <div class="order-card__items">${itemsHtml}</div>
         <div class="order-card__footer">
-          <a href="order-success.html?id=${o.id}" class="btn btn-ghost btn-sm">
+          <a href="/order-success?id=${o.id}" class="btn btn-ghost btn-sm">
             <i class="fa-solid fa-receipt"></i> View Details
           </a>
         </div>
@@ -403,19 +403,19 @@ function renderWishlist() {
         <div class="pnl-empty__icon"><i class="fa-regular fa-heart"></i></div>
         <h3>Your wishlist is empty</h3>
         <p>Save items you love to find them easily later.</p>
-        <a href="shop.html" class="btn btn-primary">Browse Products</a>
+        <a href="/shop" class="btn btn-primary">Browse Products</a>
       </div>`;
     return;
   }
   grid.innerHTML = list.map(p => `
     <div class="product-card">
       <div class="product-card__image">
-        <a href="product.html?slug=${encodeURIComponent(esc(p.slug))}">
+        <a href="/product?slug=${encodeURIComponent(esc(p.slug))}">
           <img src="${esc(p.image)}" alt="${esc(p.name)}" loading="lazy">
         </a>
       </div>
       <div class="product-card__body">
-        <a href="product.html?slug=${encodeURIComponent(esc(p.slug))}" class="product-card__name">${esc(p.name)}</a>
+        <a href="/product?slug=${encodeURIComponent(esc(p.slug))}" class="product-card__name">${esc(p.name)}</a>
         <div class="product-card__footer">
           <span class="product-card__price">${formatPrice(p.price)}</span>
         </div>
@@ -619,7 +619,7 @@ async function renderMyReviews(user) {
         <div class="pnl-empty__icon"><i class="fa-regular fa-star"></i></div>
         <h3>No reviews yet</h3>
         <p>Once your orders are delivered you can share your experience here.</p>
-        <a href="shop.html" class="btn btn-primary">Browse Products</a>
+        <a href="/shop" class="btn btn-primary">Browse Products</a>
       </div>`;
     return;
   }
@@ -687,7 +687,7 @@ async function renderMyReviews(user) {
           ${r.title ? `<div class="review-card__title">${esc(r.title)}</div>` : ''}
           <p class="review-card__text">${esc(r.text)}</p>
           <div class="review-card__actions">
-            ${slug ? `<a href="product.html?slug=${encodeURIComponent(slug)}" class="btn btn-ghost btn-sm">
+            ${slug ? `<a href="/product?slug=${encodeURIComponent(slug)}" class="btn btn-ghost btn-sm">
               <i class="fa-solid fa-arrow-up-right-from-square"></i> View Product
             </a>` : ''}
             ${editAllowed ? `<button type="button" class="btn btn-ghost btn-sm prf-open-edit"

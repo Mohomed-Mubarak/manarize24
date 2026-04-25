@@ -453,7 +453,7 @@ function bindSaveButton() {
       toast.success('Saved!', `"${name}" has been saved successfully`);
 
       // Redirect after short delay
-      setTimeout(() => { window.location.href = 'products.html'; }, 900);
+      setTimeout(() => { window.location.href = '/admin/products'; }, 900);
     } catch (err) {
       console.error('[Save Product]', err);
       toast.error('Save failed', err.message || 'Could not save product. Check your Supabase connection.');

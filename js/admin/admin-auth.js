@@ -50,7 +50,7 @@ export function requireAdmin() {
   const session = getAdminSession();
   if (!session) {
     const base = window.location.pathname.includes('/admin/') ? '' : 'admin/';
-    window.location.href = base + 'index.html';
+    window.location.href = base;
     return null;
   }
   if (session.loginAt && (Date.now() - session.loginAt > SESSION_TTL_MS)) {
@@ -183,7 +183,7 @@ export async function handleMagicLinkCallback() {
 
       if (!profile || profile.role !== 'admin' || profile.active === false) {
         await sb.auth.signOut();
-        window.location.href = 'index.html';
+        window.location.href = '/';
         done(false);
         return;
       }
@@ -213,7 +213,7 @@ export function adminLogout() {
   sessionStorage.removeItem(LS.adminSession);
   clearAdminToken();
   const base = window.location.pathname.includes('/admin/') ? '' : 'admin/';
-  window.location.href = base + 'index.html';
+  window.location.href = base;
 }
 
 // ── Change password (legacy admin only) ──────────────────────
