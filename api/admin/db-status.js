@@ -11,6 +11,7 @@
    ============================================================ */
 
 const { createClient } = require('@supabase/supabase-js');
+const { isAuthorised }  = require('./_auth');
 const https = require('https');
 
 function cors(res) {
@@ -19,13 +20,6 @@ function cors(res) {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Admin-Token');
 }
 
-function isAuthorised(req) {
-  const token    = req.headers['x-admin-token'];
-  const expected = process.env.ADMIN_API_TOKEN;
-  if (!expected || !token) return false;
-  return token.length === expected.length &&
-    require('crypto').timingSafeEqual(Buffer.from(token), Buffer.from(expected));
-}
 
 // Query pg_policies via Supabase SQL endpoint (service role)
 async function getOrderPolicies(supabaseUrl, serviceKey) {

@@ -14,25 +14,13 @@
    ============================================================ */
 
 const { createClient } = require('@supabase/supabase-js');
+const { isAuthorised }  = require('./_auth');
 
 function getAdminClient() {
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) throw new Error('Missing Supabase env vars');
   return createClient(url, key, { auth: { persistSession: false } });
-}
-
-// ── Auth middleware ──────────────────────────────────────────────
-function isAuthorised(req) {
-  const token = req.headers['x-admin-token'];
-  const expected = process.env.ADMIN_API_TOKEN;
-  if (!expected || !token) return false;
-  // Constant-time comparison to prevent timing attacks
-  return token.length === expected.length &&
-    require('crypto').timingSafeEqual(
-      Buffer.from(token),
-      Buffer.from(expected)
-    );
 }
 
 async function readJson(req) {

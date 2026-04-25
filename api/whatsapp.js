@@ -21,6 +21,20 @@
 
 const { createClient } = require('@supabase/supabase-js');
 
+// ── HIGH-3: Rate limiting ─────────────────────────────────────────
+const _rl = new Map(); // ip → { count, resetAt }
+const RL_WINDOW_MS = 60 * 60 * 1000; // 1 hour
+const RL_MAX       = 50;              // 50 notifications / IP / hour
+
+function checkRateLimit(ip) {
+  const now   = Date.now();
+  const entry = _rl.get(ip) || { count: 0, resetAt: now + RL_WINDOW_MS };
+  if (now > entry.resetAt) { entry.count = 0; entry.resetAt = now + RL_WINDOW_MS; }
+  entry.count++;
+  _rl.set(ip, entry);
+  return entry.count > RL_MAX;
+}
+
 function isAuthorised(req) {
   const token    = req.headers['x-admin-token'];
   const expected = process.env.ADMIN_API_TOKEN;
@@ -139,6 +153,11 @@ module.exports = async function handler(req, res) {
 
   if (req.method === 'OPTIONS') return res.status(204).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+
+  const ip = (req.headers['x-forwarded-for'] || '127.0.0.1').split(',')[0].trim();
+  if (checkRateLimit(ip)) {
+    return res.status(429).json({ error: 'Too many requests. Please try again later.' });
+  }
 
   if (!isAuthorised(req)) {
     return res.status(401).json({ error: 'Unauthorised' });

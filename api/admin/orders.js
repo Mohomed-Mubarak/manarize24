@@ -10,6 +10,7 @@
    ============================================================ */
 
 const { createClient } = require('@supabase/supabase-js');
+const { isAuthorised }  = require('./_auth');
 
 function getAdminClient() {
   const url = process.env.SUPABASE_URL;
@@ -18,16 +19,6 @@ function getAdminClient() {
   return createClient(url, key, { auth: { persistSession: false } });
 }
 
-function isAuthorised(req) {
-  const token    = req.headers['x-admin-token'];
-  const expected = process.env.ADMIN_API_TOKEN;
-  if (!expected || !token) return false;
-  return token.length === expected.length &&
-    require('crypto').timingSafeEqual(
-      Buffer.from(token),
-      Buffer.from(expected)
-    );
-}
 
 async function readJson(req) {
   return new Promise((resolve, reject) => {

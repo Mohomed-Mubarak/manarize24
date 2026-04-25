@@ -24,6 +24,7 @@
    ============================================================ */
 
 const { createClient } = require('@supabase/supabase-js');
+const { isAuthorised }  = require('./_auth');
 const crypto           = require('crypto');
 
 // ── Supabase service-role client (bypasses RLS) ───────────────
@@ -42,18 +43,6 @@ function cors(res) {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Admin-Token');
 }
 
-// ── Auth check ────────────────────────────────────────────────
-function isAuthorised(req) {
-  const token    = req.headers['x-admin-token'] || '';
-  const expected = process.env.ADMIN_API_TOKEN  || '';
-  if (!token || !expected) return false;
-  try {
-    return require('crypto').timingSafeEqual(
-      Buffer.from(token),
-      Buffer.from(expected)
-    );
-  } catch { return false; }
-}
 
 // ── Body parser ───────────────────────────────────────────────
 function readBody(req) {

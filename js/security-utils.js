@@ -123,6 +123,8 @@ export async function verifyPassword(plain, stored) {
 }
 
 // ── Brute-Force Login Throttle ────────────────────────────────
+// Client-side tracking (secondary layer — server is authoritative).
+// The server-side check runs in /api/admin/auth via IP+email tracking.
 const BF_KEY   = 'zm_login_attempts';
 const MAX_TRIES = 5;
 const LOCKOUT_MS = 15 * 60 * 1000; // 15 minutes
@@ -133,7 +135,8 @@ function _getBfData() {
 }
 
 /**
- * Returns an error string if currently locked out, otherwise null.
+ * Returns an error string if currently locked out (client-side check), otherwise null.
+ * NOTE: This is a UX layer only. Server enforces its own rate limit independently.
  */
 export function checkBruteForce() {
   const data = _getBfData();
@@ -145,7 +148,7 @@ export function checkBruteForce() {
 }
 
 /**
- * Record a failed login attempt; sets lockout after MAX_TRIES failures.
+ * Record a failed login attempt locally; sets lockout after MAX_TRIES.
  */
 export function recordFailedAttempt() {
   const data = _getBfData();

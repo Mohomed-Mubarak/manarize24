@@ -94,7 +94,35 @@ export function requireAdmin() {
   }
   // Start / continue inactivity tracking for this page
   startAdminInactivityTimer();
+  // MED-5: async Supabase session re-validation (non-blocking)
+  if (session.supabaseId) {
+    _revalidateSupabaseSession(session.supabaseId).catch(() => {});
+  }
   return session;
+}
+
+/** Re-validate active Supabase session; logs out if revoked or role changed. */
+async function _revalidateSupabaseSession(supabaseId) {
+  try {
+    const sb = getSupabase();
+    if (!sb) return;
+    const { data: { session: sbSession }, error } = await sb.auth.getSession();
+    if (error || !sbSession || sbSession.user?.id !== supabaseId) {
+      console.info('[AdminAuth] Supabase session expired or revoked — logging out.');
+      adminLogout();
+      return;
+    }
+    // Also re-verify role in profiles
+    const { data: profile } = await sb
+      .from('profiles')
+      .select('role, active')
+      .eq('id', supabaseId)
+      .single();
+    if (!profile || profile.role !== 'admin' || profile.active === false) {
+      console.info('[AdminAuth] Admin role revoked — logging out.');
+      adminLogout();
+    }
+  } catch { /* non-fatal */ }
 }
 
 export function getAdminSession() {
@@ -117,9 +145,24 @@ export async function adminLogin(email, password) {
       return { success: false, error: 'Invalid credentials' };
     }
     clearFailedAttempts();
+
+    // Get a real server-issued HMAC token (fixes HIGH-1)
+    try {
+      const tokenRes = await fetch('/api/admin/auth', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ email, password }),
+      });
+      if (tokenRes.ok) {
+        const { token } = await tokenRes.json();
+        if (token) setAdminToken(token);
+      }
+    } catch (e) {
+      console.warn('[AdminAuth] Could not fetch server token:', e.message);
+    }
+
     const session = { email, role: 'admin', name: 'Admin User', loginAt: Date.now() };
     sessionStorage.setItem(LS.adminSession, JSON.stringify(session));
-    // Token not set client-side — ADMIN_API_TOKEN is server-only.
     startAdminInactivityTimer();
     return { success: true, session };
   }
@@ -235,7 +278,8 @@ export async function handleMagicLinkCallback() {
         loginAt:    Date.now(),
       };
       sessionStorage.setItem(LS.adminSession, JSON.stringify(adminSession));
-      // Token not set client-side — ADMIN_API_TOKEN is server-only.
+      // Store Supabase access token as admin API token (fixes HIGH-1)
+      setAdminToken(session.access_token);
 
       // Clean URL — remove hash so back/reload won't re-trigger
       history.replaceState(null, '', window.location.pathname + window.location.search);

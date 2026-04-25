@@ -108,7 +108,25 @@ export function resetWidget(widgetId) {
 /** @deprecated Use initCaptcha / getWidgetToken instead. */
 export async function getToken(_action = 'DEFAULT') { return null; }
 
-/** @deprecated Server-side verify via /api/verify-captcha. */
-export async function verifyWithServer(_token, _action = 'DEFAULT') {
-  return { success: true };
+/**
+ * Verify an hCaptcha token server-side via /api/verify-captcha.
+ * Returns { success: true } on valid token, { success: false, error } otherwise.
+ * Callers should block form submission if success is false.
+ */
+export async function verifyWithServer(token, _action = 'DEFAULT') {
+  if (!token) return { success: false, error: 'No captcha token provided' };
+  try {
+    const res = await fetch('/api/verify-captcha', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ token }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) return { success: false, error: data.error || 'Captcha verification failed' };
+    return { success: !!data.success };
+  } catch (err) {
+    console.error('[ZenMarket] verifyWithServer error:', err.message);
+    // Fail-closed: network error = reject
+    return { success: false, error: 'Could not verify captcha. Please try again.' };
+  }
 }

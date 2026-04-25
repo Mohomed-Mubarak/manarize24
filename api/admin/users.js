@@ -14,6 +14,7 @@
    ============================================================ */
 
 const { createClient } = require('@supabase/supabase-js');
+const { isAuthorised }  = require('./_auth');
 const crypto = require('crypto');
 
 function getAdminClient() {
@@ -23,16 +24,6 @@ function getAdminClient() {
   return createClient(url, key, { auth: { persistSession: false } });
 }
 
-function isAuthorised(req) {
-  const token    = req.headers['x-admin-token'];
-  const expected = process.env.ADMIN_API_TOKEN;
-  if (!expected || !token) return false;
-  if (token.length !== expected.length) return false;
-  return crypto.timingSafeEqual(
-    Buffer.from(token),
-    Buffer.from(expected)
-  );
-}
 
 function cors(res) {
   const __origin = process.env.SITE_URL || null; if (__origin) res.setHeader('Access-Control-Allow-Origin', __origin);

@@ -615,7 +615,7 @@ function bindForm(cart) {
 
       // ── Build order — customerId is ALWAYS the real user.id ──
       const order = {
-        id:            `ORD-${Date.now()}`,
+        id:            `ORD-${crypto.randomUUID()}`,
         customerId:    user.id,          // never 'guest'
         customerName:  `${getVal('first-name')} ${getVal('last-name')}`.trim(),
         customerEmail: user.email,       // authoritative from session, not form input
