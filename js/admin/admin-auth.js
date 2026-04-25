@@ -1,5 +1,5 @@
 /* ============================================================
-   ZENMARKET — ADMIN AUTH  (v3 — Magic Link + sessionStorage)
+   ZENMARKET — ADMIN AUTH  (v4 — Inactivity timeout + sessionStorage)
    ============================================================
    Auth strategy:
    ┌─ Hardcoded ADMIN_EMAIL (env / demo mode)
@@ -11,7 +11,9 @@
        3. signInWithOtp (magic link) → email redirect to /admin/dashboard.html
        4. handleMagicLinkCallback → verify role → grant sessionStorage session
 
-   Session storage: sessionStorage (auto-clears on window close/tab kill)
+   Session storage : sessionStorage  (auto-clears on window/tab close)
+   Inactivity TTL  : 5 minutes of no mouse / keyboard / touch activity
+   Absolute TTL    : 8 hours (hard ceiling regardless of activity)
    ============================================================ */
 import { LS, ADMIN_EMAIL, ADMIN_PASSWORD } from '../config.js';
 import { setAdminToken, clearAdminToken } from '../admin-api.js';
@@ -43,7 +45,40 @@ async function getActivePasswordHash() {
   } catch { return null; }
 }
 
-const SESSION_TTL_MS = 8 * 60 * 60 * 1000; // 8 hours
+const SESSION_TTL_MS    = 8 * 60 * 60 * 1000; // 8-hour hard ceiling
+const INACTIVITY_TTL_MS = 5 * 60 * 1000;       // 5-minute inactivity timeout
+
+// ── Inactivity timer ─────────────────────────────────────────
+const _ACTIVITY_EVENTS = ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart', 'click'];
+let _inactivityTimer = null;
+
+function _resetInactivityTimer() {
+  if (_inactivityTimer) clearTimeout(_inactivityTimer);
+  _inactivityTimer = setTimeout(() => {
+    console.info('[AdminAuth] Inactivity timeout — logging out.');
+    adminLogout();
+  }, INACTIVITY_TTL_MS);
+}
+
+function _stopInactivityTimer() {
+  if (_inactivityTimer) { clearTimeout(_inactivityTimer); _inactivityTimer = null; }
+  _ACTIVITY_EVENTS.forEach(evt =>
+    document.removeEventListener(evt, _resetInactivityTimer)
+  );
+}
+
+/**
+ * Start the 5-minute inactivity countdown.
+ * Call this once after a successful admin login or page load with a valid session.
+ * Any user activity resets the clock. Zero activity for 5 minutes → auto-logout.
+ */
+export function startAdminInactivityTimer() {
+  _stopInactivityTimer(); // clear any previous listeners first
+  _resetInactivityTimer();
+  _ACTIVITY_EVENTS.forEach(evt =>
+    document.addEventListener(evt, _resetInactivityTimer, { passive: true })
+  );
+}
 
 // ── Session helpers ───────────────────────────────────────────
 export function requireAdmin() {
@@ -57,6 +92,8 @@ export function requireAdmin() {
     adminLogout();
     return null;
   }
+  // Start / continue inactivity tracking for this page
+  startAdminInactivityTimer();
   return session;
 }
 
@@ -83,6 +120,7 @@ export async function adminLogin(email, password) {
     const session = { email, role: 'admin', name: 'Admin User', loginAt: Date.now() };
     sessionStorage.setItem(LS.adminSession, JSON.stringify(session));
     // Token not set client-side — ADMIN_API_TOKEN is server-only.
+    startAdminInactivityTimer();
     return { success: true, session };
   }
 
@@ -202,6 +240,9 @@ export async function handleMagicLinkCallback() {
       // Clean URL — remove hash so back/reload won't re-trigger
       history.replaceState(null, '', window.location.pathname + window.location.search);
 
+      // Start inactivity tracking after magic-link login
+      startAdminInactivityTimer();
+
       done(true);
     });
   });
@@ -209,6 +250,7 @@ export async function handleMagicLinkCallback() {
 
 // ── Logout ────────────────────────────────────────────────────
 export function adminLogout() {
+  _stopInactivityTimer();
   try { const sb = getSupabase(); if (sb) sb.auth.signOut(); } catch { /* noop */ }
   sessionStorage.removeItem(LS.adminSession);
   clearAdminToken();

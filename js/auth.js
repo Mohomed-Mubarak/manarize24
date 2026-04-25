@@ -65,7 +65,7 @@ export function registerDevice(userId) {
 
 
 export function getSession() {
-  try { return JSON.parse(localStorage.getItem(LS.session) || 'null'); }
+  try { return JSON.parse(sessionStorage.getItem(LS.session) || 'null'); }
   catch { return null; }
 }
 
@@ -73,11 +73,11 @@ export function setSession(user) {
   // Generate a fresh random token on every session write to prevent session fixation
   const token = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2);
   const session = { ...user, _token: token, _createdAt: Date.now() };
-  localStorage.setItem(LS.session, JSON.stringify(session));
+  sessionStorage.setItem(LS.session, JSON.stringify(session));
 }
 
 export function clearSession() {
-  localStorage.removeItem(LS.session);
+  sessionStorage.removeItem(LS.session);
 }
 
 export function isLoggedIn() {
@@ -100,6 +100,21 @@ export function initSupabaseListeners() {
   const sb = getSupabase();
   if (!sb) return;
   _supabaseListenersInited = true;
+
+
+  // ── Browser-close cleanup ──────────────────────────────────
+  // When the user closes or navigates away, wipe both our sessionStorage
+  // session (already auto-cleared by the browser for sessionStorage) and
+  // Supabase's own localStorage tokens so it cannot silently re-hydrate
+  // a session the next time the browser is opened.
+  window.addEventListener('pagehide', () => {
+    sessionStorage.removeItem(LS.session);
+    try {
+      Object.keys(localStorage)
+        .filter(k => k.startsWith('sb-') || k.startsWith('supabase'))
+        .forEach(k => localStorage.removeItem(k));
+    } catch { /* noop */ }
+  });
 
   sb.auth.onAuthStateChange(async (event, session) => {
     if (_suppressAuthListener) return;   // ← skip during validation-only sign-ins
