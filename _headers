@@ -35,7 +35,6 @@
   Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(self "https://www.payhere.lk")
   Strict-Transport-Security: max-age=63072000; includeSubDomains; preload
   Cross-Origin-Opener-Policy: same-origin-allow-popups
-  X-Powered-By: ZenMarket
 
 # ── API routes — no caching, no indexing ─────────────────────────
 /api/*

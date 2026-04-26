@@ -2,7 +2,6 @@
    ZENMARKET — ADMIN ORDERS
    ============================================================ */
 import { requireAdmin } from './admin-auth.js';
-import { deleteOrder, deleteOrders, updateOrder } from '../store-adapter.js';
 import AdminAPI from '../admin-api.js';
 import { getSupabase } from '../supabase.js';
 import { adminConfirm } from './admin-confirm.js';
@@ -323,7 +322,7 @@ function bindDeleteButtons() {
       const total = btn.dataset.total;
       const ok = await adminConfirm({ title: `Delete order ${id}?`, message: `Total: Rs. ${Number(total).toLocaleString()} — this cannot be undone.`, confirm: 'Delete', danger: true });
       if (!ok) return;
-      await deleteOrder(id);
+      await AdminAPI.orders.delete(id);
       allOrders  = allOrders.filter(o => o.id !== id);
       filtered   = filtered.filter(o => o.id !== id);
       toast.success('Deleted', `Order ${id} removed`);
@@ -366,7 +365,7 @@ function bindBulkSelect() {
     const ids = checked.map(cb => cb.dataset.id);
     const ok = await adminConfirm({ title: `Delete ${ids.length} selected order${ids.length > 1 ? 's' : ''}?`, message: 'This cannot be undone.', confirm: 'Delete All', danger: true });
     if (!ok) return;
-    await deleteOrders(ids);
+    await AdminAPI.orders.deleteBulk(ids);
     allOrders = allOrders.filter(o => !ids.includes(o.id));
     filtered  = filtered.filter(o => !ids.includes(o.id));
     if (selectAll) selectAll.checked = false;
@@ -379,12 +378,12 @@ function bindBulkSelect() {
 
 // ── Update order status (used in order-detail.html) ───────────
 window.updateOrderStatus = async (id, status) => {
-  await updateOrder(id, { status });
+  await AdminAPI.orders.updateStatus(id, status);
   toast.success('Status updated', `Order ${id} → ${status}`);
 };
 
 window.updatePaymentStatus = async (id, status) => {
-  await updateOrder(id, { payment_status: status });
+  await AdminAPI.orders.updatePayment(id, status);
   toast.success('Payment updated', `Order ${id} payment → ${status}`);
 };
 

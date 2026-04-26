@@ -54,10 +54,32 @@ function cors(res) {
 }
 
 // ── Read raw body as Buffer ───────────────────────────────────────
-function readBody(req) {
+// M-1 FIX: Reject early via Content-Length header before buffering,
+// then enforce with a streaming byte-counter to catch missing/spoofed headers.
+function readBody(req, maxBytes) {
+  // Fast-path: reject immediately if Content-Length header exceeds limit
+  const contentLength = parseInt(req.headers['content-length'] || '0', 10);
+  if (contentLength > maxBytes) {
+    return Promise.reject(Object.assign(
+      new Error(`Payload too large: Content-Length ${contentLength} > ${maxBytes}`),
+      { statusCode: 413 }
+    ));
+  }
+
   return new Promise((resolve, reject) => {
     const chunks = [];
-    req.on('data', c => chunks.push(c));
+    let received = 0;
+    req.on('data', chunk => {
+      received += chunk.length;
+      if (received > maxBytes) {
+        req.destroy();
+        return reject(Object.assign(
+          new Error(`Payload too large: stream exceeded ${maxBytes} bytes`),
+          { statusCode: 413 }
+        ));
+      }
+      chunks.push(chunk);
+    });
     req.on('end',  ()  => resolve(Buffer.concat(chunks)));
     req.on('error', reject);
   });
@@ -121,7 +143,7 @@ async function handler(req, res) {
 
   try {
     const supabase    = getAdminClient();
-    const rawBody     = await readBody(req);
+    const rawBody     = await readBody(req, MAX_SIZE_BYTES);
     const contentType = req.headers['content-type'] || '';
 
     let fileBuffer, filename, mimeType, productId;
@@ -185,7 +207,8 @@ async function handler(req, res) {
 
   } catch (err) {
     console.error('[Upload API]', err.message);
-    return res.status(500).json({ error: err.message });
+    const status = err.statusCode === 413 ? 413 : 500;
+    return res.status(status).json({ error: err.message });
   }
 }
 

@@ -696,34 +696,48 @@ export async function saveOneOrder(order) {
  * @param {string} id
  * @param {object} fields - snake_case column map
  */
+// C-1 FIX: updateOrder / deleteOrder now route through the /api/admin/orders
+// serverless endpoint (service role key, bypasses RLS).
+// Direct anon-key mutations on orders are blocked by RLS — anon INSERT only.
+async function _adminFetch(path, options = {}) {
+  const token = (typeof sessionStorage !== 'undefined'
+    ? sessionStorage.getItem('zm_admin_api_token')
+    : null) || '';
+  const res = await fetch(path, {
+    ...options,
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Token': token, ...(options.headers || {}) },
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
 export async function updateOrder(id, fields) {
-  const sb = getSupabase();
-  if (!sb) throw new Error('Supabase not initialised');
-  const { error } = await sb
-    .from('orders')
-    .update({ ...fields, updated_at: new Date().toISOString() })
-    .eq('id', id);
-  if (error) throw new Error(error.message);
+  await _adminFetch(`/api/admin/orders?id=${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    body: JSON.stringify(fields),
+  });
 }
 
 /**
- * Delete an order by ID.
+ * Delete an order by ID via the service-role admin API.
  */
 export async function deleteOrder(id) {
-  const sb = getSupabase();
-  if (!sb) throw new Error('Supabase not initialised');
-  const { error } = await sb.from('orders').delete().eq('id', id);
-  if (error) throw new Error(error.message);
+  await _adminFetch(`/api/admin/orders?id=${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  });
 }
 
 /**
- * Delete multiple orders by ID array.
+ * Delete multiple orders by ID array via the service-role admin API.
  */
 export async function deleteOrders(ids) {
-  const sb = getSupabase();
-  if (!sb) throw new Error('Supabase not initialised');
-  const { error } = await sb.from('orders').delete().in('id', ids);
-  if (error) throw new Error(error.message);
+  await _adminFetch('/api/admin/orders', {
+    method: 'DELETE',
+    body: JSON.stringify({ ids }),
+  });
 }
 
 // ── Row mappers for orders ────────────────────────────────────

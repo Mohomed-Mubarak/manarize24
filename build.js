@@ -103,7 +103,6 @@ const env = {
   SUPABASE_URL:        get('SUPABASE_URL',        'https://YOUR_PROJECT.supabase.co'),
   SUPABASE_ANON_KEY:   get('SUPABASE_ANON_KEY',   ''),
   DEMO_MODE:           demoMode,
-  ADMIN_EMAIL:         get('ADMIN_EMAIL',          'admin@zenmarket.lk'),
   // SECURITY: ADMIN_PASSWORD is only needed in DEMO_MODE to seed the initial
   // password hash on first run. In production (DEMO_MODE=false) the hash is
   // stored server-side in Supabase and fetched via /api/admin/config — the
@@ -152,7 +151,6 @@ export const ENV = Object.freeze({
   SUPABASE_URL:        \`${jsStr(env.SUPABASE_URL)}\`,
   SUPABASE_ANON_KEY:   \`${jsStr(env.SUPABASE_ANON_KEY)}\`,
   DEMO_MODE:           ${env.DEMO_MODE},
-  ADMIN_EMAIL:         \`${jsStr(env.ADMIN_EMAIL)}\`,
   ADMIN_PASSWORD:      \`${jsStr(env.ADMIN_PASSWORD)}\`,
   PAYHERE_MERCHANT_ID: \`${jsStr(env.PAYHERE_MERCHANT_ID)}\`,
   PAYHERE_SANDBOX:     ${env.PAYHERE_SANDBOX},

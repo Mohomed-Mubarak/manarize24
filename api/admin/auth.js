@@ -18,32 +18,47 @@ const crypto              = require('crypto');
 const { createClient }    = require('@supabase/supabase-js');
 const { issueHmacToken }  = require('./_auth');
 
-// ── Server-side brute-force tracking (in-memory) ─────────────────
-// Keys: "ip:<ip>" and "email:<email>"
-const _bf = new Map();
+// ── Server-side brute-force tracking (H-1 FIX: persistent via Supabase) ─
+// Keys: "auth:ip:<ip>" and "auth:email:<email>"
+// Uses Supabase rate_limits table — survives Vercel cold starts.
+const { createRateLimiter } = require('../_ratelimit');
+
 const BF_MAX_ATTEMPTS = 5;
-const BF_LOCKOUT_MS   = 15 * 60 * 1000; // 15 minutes
+const BF_WINDOW_MS    = 15 * 60 * 1000; // 15-minute window
+const BF_LOCKOUT_MS   = 15 * 60 * 1000; // 15-minute lockout after max attempts
 
-function _getBf(key) {
-  return _bf.get(key) || { count: 0, until: 0 };
-}
-
-function _isLockedOut(key) {
-  const d = _getBf(key);
-  return Date.now() < d.until;
-}
-
-function _recordFailure(key) {
-  const d     = _getBf(key);
-  d.count++;
-  if (d.count >= BF_MAX_ATTEMPTS) {
-    d.until = Date.now() + BF_LOCKOUT_MS;
-    d.count = 0;
+let _rl = null;
+function getRateLimiter() {
+  if (!_rl) {
+    _rl = createRateLimiter(
+      process.env.SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_ROLE_KEY
+    );
   }
-  _bf.set(key, d);
+  return _rl;
 }
 
-function _clearBf(key) { _bf.delete(key); }
+async function _isLockedOut(key) {
+  const { limited } = await getRateLimiter().check(key, {
+    max:       BF_MAX_ATTEMPTS,
+    windowMs:  BF_WINDOW_MS,
+    lockoutMs: BF_LOCKOUT_MS,
+  });
+  return limited;
+}
+
+// Record failure = call check (it auto-increments count)
+async function _recordFailure(key) {
+  await getRateLimiter().check(key, {
+    max:       BF_MAX_ATTEMPTS,
+    windowMs:  BF_WINDOW_MS,
+    lockoutMs: BF_LOCKOUT_MS,
+  });
+}
+
+// Clear by inserting a reset entry — handled by window expiry naturally.
+// We use a no-op here; the window will expire on its own.
+async function _clearBf(_key) { /* window-based expiry in Supabase */ }
 
 // ── PBKDF2 password verify (mirrors security-utils.js) ───────────
 const PBKDF2_PREFIX = 'pbkdf2:';
@@ -105,7 +120,7 @@ module.exports = async function handler(req, res) {
   const ipKey    = `ip:${ip}`;
   const emailKey = `email:${email}`;
 
-  if (_isLockedOut(ipKey) || _isLockedOut(emailKey)) {
+  if ((await _isLockedOut(ipKey)) || (await _isLockedOut(emailKey))) {
     return res.status(429).json({ error: 'Too many failed attempts. Try again in 15 minutes.' });
   }
 
@@ -123,13 +138,13 @@ module.exports = async function handler(req, res) {
     verified = await verifyPbkdf2(password, storedHash);
 
     if (!verified) {
-      _recordFailure(ipKey);
-      _recordFailure(emailKey);
+      await _recordFailure(ipKey);
+      await _recordFailure(emailKey);
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    _clearBf(ipKey);
-    _clearBf(emailKey);
+    await _clearBf(ipKey);
+    await _clearBf(emailKey);
 
     try {
       const token = issueHmacToken(email);
@@ -145,7 +160,7 @@ module.exports = async function handler(req, res) {
   const sbKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   if (!sbUrl || !sbKey) {
-    _recordFailure(ipKey);
+    await _recordFailure(ipKey);
     return res.status(401).json({ error: 'Invalid credentials' });
   }
 
@@ -154,15 +169,15 @@ module.exports = async function handler(req, res) {
     // Use Supabase Auth to verify credentials
     const anonKey = process.env.SUPABASE_ANON_KEY || '';
     if (!anonKey) {
-      _recordFailure(ipKey);
+      await _recordFailure(ipKey);
       return res.status(401).json({ error: 'Invalid credentials' });
     }
     const sbAnon = createClient(sbUrl, anonKey, { auth: { persistSession: false } });
     const { data: authData, error: authErr } = await sbAnon.auth.signInWithPassword({ email, password });
 
     if (authErr || !authData?.user) {
-      _recordFailure(ipKey);
-      _recordFailure(emailKey);
+      await _recordFailure(ipKey);
+      await _recordFailure(emailKey);
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
@@ -177,13 +192,13 @@ module.exports = async function handler(req, res) {
     await sbAnon.auth.signOut();
 
     if (!profile || profile.role !== 'admin' || profile.active === false) {
-      _recordFailure(ipKey);
-      _recordFailure(emailKey);
+      await _recordFailure(ipKey);
+      await _recordFailure(emailKey);
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    _clearBf(ipKey);
-    _clearBf(emailKey);
+    await _clearBf(ipKey);
+    await _clearBf(emailKey);
 
     // For Supabase admins, issue our HMAC token (not the Supabase JWT)
     // The magic-link flow handles Supabase JWT on the client side

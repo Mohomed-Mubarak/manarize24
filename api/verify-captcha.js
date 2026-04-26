@@ -6,21 +6,28 @@
    Returns:  { success: true } | { success: false, error: string }
 
    Requires env var: HCAPTCHA_SECRET  (never expose in browser)
+
+   H-1 FIX: Rate limiting now uses Supabase rate_limits table
+   (persistent across cold starts) via check_rate_limit() RPC.
+   In-memory Map used only as fallback when Supabase is unavailable.
    ============================================================ */
 
-// In-memory rate limiter (per IP, resets on cold start)
-const _rl = new Map(); // ip → { count, resetAt }
+const { createRateLimiter } = require('./_ratelimit');
+
+// Lazy-initialised so env vars are available at runtime
+let _rl = null;
+function getRateLimiter() {
+  if (!_rl) {
+    _rl = createRateLimiter(
+      process.env.SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_ROLE_KEY
+    );
+  }
+  return _rl;
+}
+
 const RL_WINDOW_MS = 60_000; // 1 minute
 const RL_MAX       = 20;     // 20 verifications per IP per minute
-
-function checkRateLimit(ip) {
-  const now  = Date.now();
-  const entry = _rl.get(ip) || { count: 0, resetAt: now + RL_WINDOW_MS };
-  if (now > entry.resetAt) { entry.count = 0; entry.resetAt = now + RL_WINDOW_MS; }
-  entry.count++;
-  _rl.set(ip, entry);
-  return entry.count > RL_MAX;
-}
 
 async function readJson(req) {
   return new Promise((resolve, reject) => {
@@ -44,7 +51,13 @@ module.exports = async function handler(req, res) {
   if (req.method !== 'POST')   return res.status(405).json({ error: 'Method not allowed' });
 
   const ip = (req.headers['x-forwarded-for'] || '127.0.0.1').split(',')[0].trim();
-  if (checkRateLimit(ip)) {
+
+  const { limited } = await getRateLimiter().check(`captcha:${ip}`, {
+    max:      RL_MAX,
+    windowMs: RL_WINDOW_MS,
+  });
+
+  if (limited) {
     return res.status(429).json({ success: false, error: 'Too many requests' });
   }
 
@@ -58,13 +71,11 @@ module.exports = async function handler(req, res) {
   const secret = process.env.HCAPTCHA_SECRET;
   if (!secret) {
     console.error('[verify-captcha] HCAPTCHA_SECRET env var not set');
-    // Fail-closed: if secret is missing, reject the request
     return res.status(503).json({ success: false, error: 'Captcha service not configured' });
   }
 
   try {
     const params = new URLSearchParams({ secret, response: token });
-    // Optional: include remoteip for extra validation
     if (ip && ip !== '127.0.0.1') params.set('remoteip', ip);
 
     const hcRes = await fetch('https://hcaptcha.com/siteverify', {

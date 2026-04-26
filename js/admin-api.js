@@ -110,6 +110,16 @@ const orders = {
     `/api/admin/orders?id=${encodeURIComponent(id)}`,
     { method: 'PUT', body: JSON.stringify({ payment_status: paymentStatus, ...extra }) }
   ),
+
+  delete: (id) => apiFetch(
+    `/api/admin/orders?id=${encodeURIComponent(id)}`,
+    { method: 'DELETE' }
+  ),
+
+  deleteBulk: (ids) => apiFetch(
+    '/api/admin/orders',
+    { method: 'DELETE', body: JSON.stringify({ ids }) }
+  ),
 };
 
 // ── Reviews ───────────────────────────────────────────────────────

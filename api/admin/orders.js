@@ -34,7 +34,7 @@ async function readJson(req) {
 
 function cors(res) {
   const __origin = process.env.SITE_URL || null; if (__origin) res.setHeader('Access-Control-Allow-Origin', __origin);
-  res.setHeader('Access-Control-Allow-Methods', 'GET, PUT, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, PUT, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Admin-Token');
 }
 
@@ -146,6 +146,27 @@ module.exports = async function handler(req, res) {
 
       console.log(`[Admin Orders] Updated order ${id}: ${JSON.stringify(update)}`);
       return res.status(200).json({ data });
+    }
+
+    // ── DELETE — delete order(s) ────────────────────────────────
+    if (req.method === 'DELETE') {
+      // Single: DELETE /api/admin/orders?id=xxx
+      // Bulk:   DELETE /api/admin/orders  body: { ids: ['a','b',...] }
+      if (id) {
+        const { error } = await supabase.from('orders').delete().eq('id', id);
+        if (error) throw error;
+        console.log(`[Admin Orders] Deleted order ${id}`);
+        return res.status(200).json({ deleted: [id] });
+      }
+
+      const body = await readJson(req);
+      const ids  = Array.isArray(body.ids) ? body.ids.filter(x => typeof x === 'string') : [];
+      if (!ids.length) return res.status(400).json({ error: 'Missing id or ids array' });
+
+      const { error } = await supabase.from('orders').delete().in('id', ids);
+      if (error) throw error;
+      console.log(`[Admin Orders] Deleted ${ids.length} orders`);
+      return res.status(200).json({ deleted: ids });
     }
 
     return res.status(405).json({ error: 'Method not allowed' });

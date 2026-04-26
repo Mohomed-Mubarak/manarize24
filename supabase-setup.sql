@@ -4,9 +4,16 @@
 -- fixed RPC functions, trigger, RLS policies, and indexes.
 -- Safe to re-run: uses IF NOT EXISTS / CREATE OR REPLACE.
 --
--- v2 CHANGES (merged from FIX-orders-supabase.sql):
---   • § 3  — ADD COLUMN coupon_code (fixes PGRST204 error)
---   • § 21 — NOTIFY pgrst reload schema cache
+-- v3 SECURITY PATCH (2026-04-25):
+--   • C-1 — orders: removed anon SELECT/UPDATE/DELETE broad policies.
+--            Admin mutations go via /api/admin/orders (service role).
+--   • C-2 — profiles: removed anon SELECT all + anon UPDATE all.
+--            Prevents privilege escalation (role='admin') via anon key.
+--   • C-3 — products/categories: removed auth all-write policies.
+--            Authenticated customers are now read-only.
+--            Admin writes go via /api/admin/products (service role).
+--   • M-4 — newsletter_subscribers: removed anon SELECT (exposed emails).
+--   • Added rate_limits table for persistent serverless rate limiting.
 -- ============================================================
 
 
@@ -39,12 +46,21 @@ CREATE TABLE IF NOT EXISTS products (
   updated_at    timestamptz DEFAULT now()
 );
 ALTER TABLE products ENABLE ROW LEVEL SECURITY;
+
+-- C-3 FIX: drop the old "auth all products" write-all policy
 DROP POLICY IF EXISTS "Anon read active products"  ON products;
-CREATE POLICY "Anon read active products" ON products FOR SELECT TO anon USING (active = true);
 DROP POLICY IF EXISTS "Anon all products"           ON products;
--- Removed: FOR ALL TO anon (allowed public DELETE). Writes now require authenticated session.
-DROP POLICY IF EXISTS "Auth all products" ON products;
-CREATE POLICY "Auth all products" ON products FOR ALL TO authenticated USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Auth all products"           ON products;
+DROP POLICY IF EXISTS "Auth read products"          ON products;
+
+-- Anon: read active products only (storefront)
+CREATE POLICY "Anon read active products" ON products
+  FOR SELECT TO anon USING (active = true);
+
+-- Authenticated customers: read only (all products incl inactive for search)
+-- Writes go exclusively through /api/admin/products using service role key
+CREATE POLICY "Auth read products" ON products
+  FOR SELECT TO authenticated USING (true);
 
 
 -- ============================================================
@@ -63,16 +79,23 @@ CREATE TABLE IF NOT EXISTS categories (
   created_at  timestamptz DEFAULT now(),
   updated_at  timestamptz DEFAULT now()
 );
--- Safe back-fills for existing deployments that ran an earlier version of this script
 ALTER TABLE categories ADD COLUMN IF NOT EXISTS icon      text;
 ALTER TABLE categories ADD COLUMN IF NOT EXISTS parent_id text REFERENCES categories(id) ON DELETE SET NULL;
 ALTER TABLE categories ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Anon all categories" ON categories;
--- Removed: FOR ALL TO anon. Anon users only need to read categories.
+
+-- C-3 FIX: drop old write-all policies
+DROP POLICY IF EXISTS "Anon all categories"  ON categories;
 DROP POLICY IF EXISTS "Anon read categories" ON categories;
-CREATE POLICY "Anon read categories" ON categories FOR SELECT TO anon USING (true);
-DROP POLICY IF EXISTS "Auth all categories" ON categories;
-CREATE POLICY "Auth all categories" ON categories FOR ALL TO authenticated USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Auth all categories"  ON categories;
+DROP POLICY IF EXISTS "Auth read categories" ON categories;
+
+-- Anon and authenticated: read only
+-- Admin writes go via /api/admin/* with service role key
+CREATE POLICY "Anon read categories" ON categories
+  FOR SELECT TO anon USING (true);
+
+CREATE POLICY "Auth read categories" ON categories
+  FOR SELECT TO authenticated USING (true);
 
 
 -- ============================================================
@@ -101,21 +124,20 @@ CREATE TABLE IF NOT EXISTS orders (
   created_at      timestamptz DEFAULT now(),
   updated_at      timestamptz DEFAULT now()
 );
--- Safe back-fills for deployments that ran an earlier version of this script
-ALTER TABLE orders ADD COLUMN IF NOT EXISTS coupon_code  text DEFAULT '';   -- FIX: PGRST204 "coupon_code not found in schema cache"
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS coupon_code  text DEFAULT '';
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_id   text;
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_slip text;
 ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
--- Drop ALL known policy names (including legacy ones) before re-creating.
--- This ensures a clean slate even on databases that ran earlier versions of this script.
+
+-- C-1 FIX: Drop ALL legacy and previous policies
 DROP POLICY IF EXISTS "Anon all orders"          ON orders;
 DROP POLICY IF EXISTS "Anon insert orders"        ON orders;
 DROP POLICY IF EXISTS "Anon read all orders"      ON orders;
 DROP POLICY IF EXISTS "Anon update orders"        ON orders;
+DROP POLICY IF EXISTS "Anon delete orders"        ON orders;
 DROP POLICY IF EXISTS "Auth all orders"           ON orders;
 DROP POLICY IF EXISTS "Auth insert own orders"    ON orders;
 DROP POLICY IF EXISTS "Auth select own orders"    ON orders;
--- Legacy names that may exist on older deployments:
 DROP POLICY IF EXISTS "Users can insert orders"   ON orders;
 DROP POLICY IF EXISTS "Users can read own orders" ON orders;
 DROP POLICY IF EXISTS "Users own orders"          ON orders;
@@ -124,44 +146,19 @@ DROP POLICY IF EXISTS "Insert orders"             ON orders;
 DROP POLICY IF EXISTS "Authenticated insert"      ON orders;
 DROP POLICY IF EXISTS "Public insert orders"      ON orders;
 DROP POLICY IF EXISTS "Allow insert for all"      ON orders;
+DROP POLICY IF EXISTS "Users read own orders"     ON orders;
 
--- Anon can INSERT orders.
--- Required because the storefront uses a custom localStorage auth that does NOT
--- create a Supabase Auth session, so all browser requests arrive as the anon role.
+-- C-1 FIX: Anon can only INSERT (guest checkout — storefront has no Supabase session)
 CREATE POLICY "Anon insert orders" ON orders
   FOR INSERT TO anon WITH CHECK (true);
 
--- Anon can SELECT all orders.
--- Required by the admin dashboard, which uses the anon key (custom password auth,
--- NOT a Supabase user session). The admin panel is separately protected by an
--- app-level password.  This policy does NOT expose order data in the storefront UI —
--- the storefront pages always filter by customer_id / customer_email client-side.
--- In full-Supabase-Auth deployments you can remove this policy and use the
--- service-role-key serverless endpoint (/api/admin/orders) exclusively.
-CREATE POLICY "Anon read all orders" ON orders
-  FOR SELECT TO anon USING (true);
+-- Authenticated users can read their own orders (profile page)
+-- customer_id is stored as the Supabase auth.uid()::text at checkout time
+CREATE POLICY "Users read own orders" ON orders
+  FOR SELECT TO authenticated USING (auth.uid()::text = customer_id);
 
--- Anon UPDATE — admin updates order status from the dashboard (anon key + custom password).
--- Only the fields the admin actually changes are written; the serverless function
--- (/api/admin/orders PUT) uses service-role and is preferred in production.
-CREATE POLICY "Anon update orders" ON orders
-  FOR UPDATE TO anon USING (true) WITH CHECK (true);
-
--- Anon DELETE — admin deletes orders from the dashboard (anon key + custom password auth).
--- Without this policy the deleteOrder() / deleteOrders() calls in admin-orders.js fail
--- with "permission denied" because the anon role only had SELECT/INSERT/UPDATE before.
--- The admin dashboard is separately protected by the ADMIN_API_TOKEN app-level password.
-DROP POLICY IF EXISTS "Anon delete orders" ON orders;
-CREATE POLICY "Anon delete orders" ON orders
-  FOR DELETE TO anon USING (true);
-
--- Authenticated Supabase-Auth users get full access to all orders.
--- INSERT at checkout, SELECT own orders in profile, UPDATE/DELETE via
--- the service-role serverless functions (admin dashboard).
--- The broad USING(true) is intentional: admin uses a Supabase Auth user
--- too, and the service-role API is the real access-control boundary.
-CREATE POLICY "Auth all orders" ON orders
-  FOR ALL TO authenticated USING (true) WITH CHECK (true);
+-- NOTE: Admin reads/writes/deletes go exclusively through
+-- /api/admin/orders which uses SUPABASE_SERVICE_ROLE_KEY (bypasses RLS).
 
 
 -- ============================================================
@@ -180,25 +177,26 @@ CREATE TABLE IF NOT EXISTS coupons (
   created_at  timestamptz DEFAULT now(),
   updated_at  timestamptz DEFAULT now()
 );
--- Safe back-fills for existing deployments that ran an earlier version of this script
 ALTER TABLE coupons ADD COLUMN IF NOT EXISTS max_uses    integer DEFAULT NULL;
 ALTER TABLE coupons ADD COLUMN IF NOT EXISTS used_count  integer NOT NULL DEFAULT 0;
 ALTER TABLE coupons ADD COLUMN IF NOT EXISTS expires_at  timestamptz;
 ALTER TABLE coupons ADD COLUMN IF NOT EXISTS min_order   numeric DEFAULT 0;
--- Fix: drop any stale type check constraint and replace with the correct allowed values
 ALTER TABLE coupons DROP CONSTRAINT IF EXISTS coupons_type_check;
 ALTER TABLE coupons ADD CONSTRAINT coupons_type_check CHECK (type IN ('percent', 'fixed', 'shipping'));
 ALTER TABLE coupons ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Anon all coupons" ON coupons;
--- Removed: FOR ALL TO anon. Storefront only needs to read active coupons.
--- The increment_coupon_usage() RPC runs SECURITY DEFINER so it bypasses RLS.
-DROP POLICY IF EXISTS "Anon read active coupons" ON coupons;
-DROP POLICY IF EXISTS "Anon read all coupons"    ON coupons;   -- FIX: drop before re-create to allow safe re-runs
--- Allow anon to read all coupons so the storefront can give accurate error messages
--- (e.g. "coupon is disabled" vs "coupon not found"). The application code enforces active check.
-CREATE POLICY "Anon read all coupons" ON coupons FOR SELECT TO anon USING (true);
-DROP POLICY IF EXISTS "Auth all coupons" ON coupons;
-CREATE POLICY "Auth all coupons" ON coupons FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Anon all coupons"          ON coupons;
+DROP POLICY IF EXISTS "Anon read active coupons"  ON coupons;
+DROP POLICY IF EXISTS "Anon read all coupons"     ON coupons;
+DROP POLICY IF EXISTS "Auth all coupons"          ON coupons;
+
+-- Anon reads active coupons only (storefront validation)
+CREATE POLICY "Anon read active coupons" ON coupons
+  FOR SELECT TO anon USING (active = true);
+
+-- Admin writes via service role API — no authenticated write policy needed
+CREATE POLICY "Auth read coupons" ON coupons
+  FOR SELECT TO authenticated USING (true);
 
 
 -- ============================================================
@@ -217,14 +215,13 @@ CREATE TABLE IF NOT EXISTS shipping_zones (
   created_at  timestamptz DEFAULT now(),
   updated_at  timestamptz DEFAULT now()
 );
--- Ensure all columns exist on older tables (safe to re-run)
 ALTER TABLE shipping_zones ADD COLUMN IF NOT EXISTS districts   text[]       DEFAULT '{}';
 ALTER TABLE shipping_zones ADD COLUMN IF NOT EXISTS free_above  numeric      DEFAULT NULL;
 ALTER TABLE shipping_zones ADD COLUMN IF NOT EXISTS min_days    integer      DEFAULT 2;
 ALTER TABLE shipping_zones ADD COLUMN IF NOT EXISTS max_days    integer      DEFAULT 4;
 ALTER TABLE shipping_zones ADD COLUMN IF NOT EXISTS active      boolean      NOT NULL DEFAULT true;
 ALTER TABLE shipping_zones ADD COLUMN IF NOT EXISTS updated_at  timestamptz  DEFAULT now();
--- Copy legacy 'provinces' data into 'districts' if needed
+
 DO $$
 BEGIN
   IF EXISTS (
@@ -237,13 +234,17 @@ BEGIN
       AND provinces IS NOT NULL AND provinces != '{}';
   END IF;
 END $$;
+
 ALTER TABLE shipping_zones ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Anon all shipping_zones" ON shipping_zones;
--- Removed: FOR ALL TO anon.
-DROP POLICY IF EXISTS "Anon read shipping_zones" ON shipping_zones;
-CREATE POLICY "Anon read shipping_zones" ON shipping_zones FOR SELECT TO anon USING (true);
-DROP POLICY IF EXISTS "Auth all shipping_zones" ON shipping_zones;
-CREATE POLICY "Auth all shipping_zones" ON shipping_zones FOR ALL TO authenticated USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Anon all shipping_zones"   ON shipping_zones;
+DROP POLICY IF EXISTS "Anon read shipping_zones"  ON shipping_zones;
+DROP POLICY IF EXISTS "Auth all shipping_zones"   ON shipping_zones;
+
+CREATE POLICY "Anon read shipping_zones" ON shipping_zones
+  FOR SELECT TO anon USING (true);
+
+CREATE POLICY "Auth read shipping_zones" ON shipping_zones
+  FOR SELECT TO authenticated USING (true);
 
 
 -- ============================================================
@@ -262,26 +263,37 @@ CREATE TABLE IF NOT EXISTS profiles (
   created_at  timestamptz DEFAULT now(),
   updated_at  timestamptz DEFAULT now()
 );
--- Add missing columns (safe on existing tables)
 ALTER TABLE profiles ADD COLUMN IF NOT EXISTS email       text;
 ALTER TABLE profiles ADD COLUMN IF NOT EXISTS active      boolean DEFAULT true;
 ALTER TABLE profiles ADD COLUMN IF NOT EXISTS orders      integer DEFAULT 0;
 ALTER TABLE profiles ADD COLUMN IF NOT EXISTS total_spent numeric DEFAULT 0;
 ALTER TABLE profiles ADD COLUMN IF NOT EXISTS addresses   jsonb   DEFAULT '[]';
 
--- Backfill email from auth.users for existing rows
 UPDATE profiles p SET email = u.email
 FROM auth.users u WHERE p.id = u.id AND p.email IS NULL;
 
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
+
+-- C-2 FIX: Drop all broad anon policies on profiles
 DROP POLICY IF EXISTS "Anon read all profiles"  ON profiles;
-CREATE POLICY "Anon read all profiles"  ON profiles FOR SELECT TO anon USING (true);
 DROP POLICY IF EXISTS "Anon update profiles"    ON profiles;
-CREATE POLICY "Anon update profiles"    ON profiles FOR UPDATE TO anon USING (true) WITH CHECK (true);
 DROP POLICY IF EXISTS "Anon insert profiles"    ON profiles;
-CREATE POLICY "Anon insert profiles"    ON profiles FOR INSERT TO anon WITH CHECK (true);
 DROP POLICY IF EXISTS "Users own profile"       ON profiles;
-CREATE POLICY "Users own profile"       ON profiles FOR ALL TO authenticated USING (auth.uid()=id) WITH CHECK (auth.uid()=id);
+
+-- C-2 FIX: Anon can only INSERT during signup (Supabase trigger handles this,
+-- but keep for edge cases). Cannot read or update profiles without auth.
+-- The trigger handle_new_user() uses SECURITY DEFINER so it bypasses RLS.
+CREATE POLICY "Anon insert own profile" ON profiles
+  FOR INSERT TO anon WITH CHECK (true);
+
+-- Authenticated users can only access their own profile
+CREATE POLICY "Users own profile" ON profiles
+  FOR ALL TO authenticated
+  USING (auth.uid() = id)
+  WITH CHECK (auth.uid() = id);
+
+-- NOTE: Admin profile reads (for role checks) go exclusively through
+-- /api/admin/* which uses SUPABASE_SERVICE_ROLE_KEY (bypasses RLS).
 
 
 -- ============================================================
@@ -303,7 +315,6 @@ CREATE TABLE IF NOT EXISTS reviews (
   created_at  timestamptz DEFAULT now(),
   updated_at  timestamptz DEFAULT now()
 );
--- Add missing columns (safe on existing tables)
 ALTER TABLE reviews ADD COLUMN IF NOT EXISTS rejected    boolean     DEFAULT false;
 ALTER TABLE reviews ADD COLUMN IF NOT EXISTS edited_at   timestamptz;
 ALTER TABLE reviews ADD COLUMN IF NOT EXISTS approved_at timestamptz;
@@ -311,14 +322,24 @@ ALTER TABLE reviews ADD COLUMN IF NOT EXISTS updated_at  timestamptz DEFAULT now
 
 ALTER TABLE reviews ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Anon read approved reviews" ON reviews;
-CREATE POLICY "Anon read approved reviews" ON reviews FOR SELECT TO anon USING (approved=true AND rejected=false);
-DROP POLICY IF EXISTS "Anon all reviews" ON reviews;
--- Removed: FOR ALL TO anon — this overrode the approved-only SELECT policy and
--- allowed public DELETE/UPDATE of all reviews (fixes #19 conflicting RLS + #20).
-DROP POLICY IF EXISTS "Anon insert reviews" ON reviews;
-CREATE POLICY "Anon insert reviews" ON reviews FOR INSERT TO anon WITH CHECK (true);
-DROP POLICY IF EXISTS "Auth all reviews" ON reviews;
-CREATE POLICY "Auth all reviews" ON reviews FOR ALL TO authenticated USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Anon all reviews"           ON reviews;
+DROP POLICY IF EXISTS "Anon insert reviews"        ON reviews;
+DROP POLICY IF EXISTS "Auth all reviews"           ON reviews;
+
+-- M-4: Anon can only read approved, non-rejected reviews
+CREATE POLICY "Anon read approved reviews" ON reviews
+  FOR SELECT TO anon USING (approved = true AND rejected = false);
+
+-- Anon can submit reviews (guest shoppers)
+CREATE POLICY "Anon insert reviews" ON reviews
+  FOR INSERT TO anon WITH CHECK (true);
+
+-- Authenticated users can read all reviews and submit; admin manages via API
+CREATE POLICY "Auth read reviews" ON reviews
+  FOR SELECT TO authenticated USING (true);
+
+CREATE POLICY "Auth insert reviews" ON reviews
+  FOR INSERT TO authenticated WITH CHECK (true);
 
 
 -- ============================================================
@@ -332,13 +353,13 @@ CREATE TABLE IF NOT EXISTS contact_messages (
   created_at timestamptz DEFAULT now()
 );
 ALTER TABLE contact_messages ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Anon all contact_messages" ON contact_messages;
--- Removed: FOR ALL TO anon. Public users only need to submit (INSERT) messages.
+DROP POLICY IF EXISTS "Anon all contact_messages"    ON contact_messages;
 DROP POLICY IF EXISTS "Anon insert contact_messages" ON contact_messages;
-CREATE POLICY "Anon insert contact_messages" ON contact_messages FOR INSERT TO anon WITH CHECK (true);
-DROP POLICY IF EXISTS "Auth all contact_messages" ON contact_messages;
-CREATE POLICY "Auth all contact_messages" ON contact_messages FOR ALL TO authenticated USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Auth all contact_messages"    ON contact_messages;
 
+-- Public users submit only; admin reads via service-role API
+CREATE POLICY "Anon insert contact_messages" ON contact_messages
+  FOR INSERT TO anon WITH CHECK (true);
 
 -- ============================================================
 -- § 9. BLOG POSTS
@@ -361,8 +382,7 @@ CREATE TABLE IF NOT EXISTS blog_posts (
   created_at   timestamptz DEFAULT now(),
   updated_at   timestamptz DEFAULT now()
 );
--- Ensure all optional columns exist on older tables (safe to re-run)
-ALTER TABLE blog_posts ADD COLUMN IF NOT EXISTS content     text;                      -- FIX: was missing — caused "content column not found in schema cache"
+ALTER TABLE blog_posts ADD COLUMN IF NOT EXISTS content     text;
 ALTER TABLE blog_posts ADD COLUMN IF NOT EXISTS category    text         DEFAULT '';
 ALTER TABLE blog_posts ADD COLUMN IF NOT EXISTS excerpt     text         DEFAULT '';
 ALTER TABLE blog_posts ADD COLUMN IF NOT EXISTS cover_image text         DEFAULT '';
@@ -373,13 +393,19 @@ ALTER TABLE blog_posts ADD COLUMN IF NOT EXISTS tags        text[]       DEFAULT
 ALTER TABLE blog_posts ADD COLUMN IF NOT EXISTS seo_title   text         DEFAULT '';
 ALTER TABLE blog_posts ADD COLUMN IF NOT EXISTS seo_desc    text         DEFAULT '';
 ALTER TABLE blog_posts ADD COLUMN IF NOT EXISTS updated_at  timestamptz  DEFAULT now();
+
 ALTER TABLE blog_posts ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Anon read published posts" ON blog_posts;
-CREATE POLICY "Anon read published posts" ON blog_posts FOR SELECT TO anon USING (published=true);
-DROP POLICY IF EXISTS "Anon all blog_posts" ON blog_posts;
--- Removed: FOR ALL TO anon (allowed public DELETE of any post).
-DROP POLICY IF EXISTS "Auth all blog_posts" ON blog_posts;
-CREATE POLICY "Auth all blog_posts" ON blog_posts FOR ALL TO authenticated USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Anon all blog_posts"       ON blog_posts;
+DROP POLICY IF EXISTS "Auth all blog_posts"       ON blog_posts;
+
+-- M-4: Anon reads published posts only
+CREATE POLICY "Anon read published posts" ON blog_posts
+  FOR SELECT TO anon USING (published = true);
+
+-- Authenticated users read all (for admin preview); writes via service-role API
+CREATE POLICY "Auth read blog_posts" ON blog_posts
+  FOR SELECT TO authenticated USING (true);
 
 
 -- ============================================================
@@ -397,17 +423,18 @@ CREATE TABLE IF NOT EXISTS notifications (
 );
 ALTER TABLE notifications ADD COLUMN IF NOT EXISTS user_id text;
 ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Anon all notifications" ON notifications;
--- Removed: FOR ALL TO anon. Split into safe per-operation policies.
+
+DROP POLICY IF EXISTS "Anon all notifications"    ON notifications;
 DROP POLICY IF EXISTS "Anon read notifications"   ON notifications;
-CREATE POLICY "Anon read notifications"   ON notifications FOR SELECT TO anon USING (true);
 DROP POLICY IF EXISTS "Anon insert notifications" ON notifications;
-CREATE POLICY "Anon insert notifications" ON notifications FOR INSERT TO anon WITH CHECK (true);
 DROP POLICY IF EXISTS "Anon update notifications" ON notifications;
--- Restrict anon UPDATE to only flipping read=true; prevents mass-marking all rows
+DROP POLICY IF EXISTS "Auth all notifications"    ON notifications;
+
+CREATE POLICY "Anon read notifications"   ON notifications FOR SELECT TO anon USING (true);
+CREATE POLICY "Anon insert notifications" ON notifications FOR INSERT TO anon WITH CHECK (true);
+-- Only allow anon to mark as read, not change other fields
 CREATE POLICY "Anon update notifications" ON notifications FOR UPDATE TO anon
   USING (true) WITH CHECK (read = true);
-DROP POLICY IF EXISTS "Auth all notifications" ON notifications;
 CREATE POLICY "Auth all notifications"    ON notifications FOR ALL TO authenticated USING (true) WITH CHECK (true);
 
 
@@ -420,21 +447,20 @@ CREATE TABLE IF NOT EXISTS site_settings (
   updated_at timestamptz DEFAULT now()
 );
 ALTER TABLE site_settings ENABLE ROW LEVEL SECURITY;
+
 DROP POLICY IF EXISTS "Anon all site_settings"    ON site_settings;
--- Removed: FOR ALL TO anon. Storefront only reads settings; writes are admin-only.
 DROP POLICY IF EXISTS "Anon read site_settings"   ON site_settings;
-CREATE POLICY "Anon read site_settings"   ON site_settings FOR SELECT TO anon USING (true);
--- Allow admin panel (uses anon key + custom password auth) to save settings
 DROP POLICY IF EXISTS "Anon write site_settings"  ON site_settings;
-CREATE POLICY "Anon write site_settings"  ON site_settings FOR INSERT TO anon WITH CHECK (true);
 DROP POLICY IF EXISTS "Anon update site_settings" ON site_settings;
-CREATE POLICY "Anon update site_settings" ON site_settings FOR UPDATE TO anon USING (true) WITH CHECK (true);
 DROP POLICY IF EXISTS "Auth all site_settings"    ON site_settings;
+
+-- Storefront reads settings; admin writes go via /api/admin (service role)
+CREATE POLICY "Anon read site_settings"   ON site_settings FOR SELECT TO anon USING (true);
 CREATE POLICY "Auth all site_settings"    ON site_settings FOR ALL TO authenticated USING (true) WITH CHECK (true);
 
 
 -- ============================================================
--- § 12. NEWSLETTER SUBSCRIBERS  (NEW)
+-- § 12. NEWSLETTER SUBSCRIBERS
 -- ============================================================
 CREATE TABLE IF NOT EXISTS newsletter_subscribers (
   email         text PRIMARY KEY,
@@ -442,10 +468,14 @@ CREATE TABLE IF NOT EXISTS newsletter_subscribers (
   active        boolean DEFAULT true
 );
 ALTER TABLE newsletter_subscribers ENABLE ROW LEVEL SECURITY;
+
 DROP POLICY IF EXISTS "Anon insert newsletter" ON newsletter_subscribers;
-CREATE POLICY "Anon insert newsletter" ON newsletter_subscribers FOR INSERT TO anon WITH CHECK (true);
-DROP POLICY IF EXISTS "Anon read newsletter"  ON newsletter_subscribers;
-CREATE POLICY "Anon read newsletter"  ON newsletter_subscribers FOR SELECT TO anon USING (true);
+DROP POLICY IF EXISTS "Anon read newsletter"   ON newsletter_subscribers;
+
+-- M-4 FIX: Anon can only INSERT (subscribe). SELECT removed — exposes all emails.
+-- Admin reads subscriber list via service-role key in API.
+CREATE POLICY "Anon insert newsletter" ON newsletter_subscribers
+  FOR INSERT TO anon WITH CHECK (true);
 
 
 -- ============================================================
@@ -457,15 +487,36 @@ CREATE TABLE IF NOT EXISTS admin_config (
   updated_at timestamptz DEFAULT now()
 );
 ALTER TABLE admin_config ENABLE ROW LEVEL SECURITY;
+
 DROP POLICY IF EXISTS "Anon all admin_config" ON admin_config;
--- Removed: FOR ALL TO anon — exposes password hashes and secret config to the public.
--- admin_config is only accessible via the service_role key (server-side API routes).
 DROP POLICY IF EXISTS "Auth all admin_config" ON admin_config;
-CREATE POLICY "Auth all admin_config" ON admin_config FOR ALL TO authenticated USING (true) WITH CHECK (true);
+-- No anon access. Service role key only (server-side API routes).
+-- Authenticated access locked down — admin uses service role via API.
 
 
 -- ============================================================
--- § 14. RPC FUNCTIONS
+-- § 14. RATE LIMITS  (H-1 FIX: persistent serverless rate limiting)
+-- ============================================================
+-- Replaces in-memory Maps that reset on each Vercel cold start.
+-- Used by /api/verify-captcha and /api/admin/auth.
+-- Rows auto-expire via the reset_at column; a cleanup cron or
+-- the insert-on-conflict logic handles stale rows.
+CREATE TABLE IF NOT EXISTS rate_limits (
+  key        text PRIMARY KEY,        -- e.g. "captcha:1.2.3.4" or "auth:user@x.com"
+  count      integer NOT NULL DEFAULT 0,
+  locked     boolean NOT NULL DEFAULT false,
+  locked_until timestamptz,
+  reset_at   timestamptz NOT NULL DEFAULT (now() + interval '1 minute'),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE rate_limits ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Service role rate_limits" ON rate_limits;
+-- No anon/authenticated access — only service role key (server-side only)
+
+
+-- ============================================================
+-- § 15. RPC FUNCTIONS
 -- ============================================================
 
 -- Atomically decrement product stock (prevents going below 0)
@@ -499,6 +550,55 @@ BEGIN
 END;
 $$;
 
+-- Rate limit check/increment — SECURITY DEFINER so anon role can call it
+-- Returns: { limited: bool, count: int }
+CREATE OR REPLACE FUNCTION check_rate_limit(
+  p_key        text,
+  p_max        integer,
+  p_window_ms  bigint,
+  p_lockout_ms bigint DEFAULT 0
+)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER AS $$
+DECLARE
+  v_row rate_limits%ROWTYPE;
+  v_now timestamptz := now();
+BEGIN
+  SELECT * INTO v_row FROM rate_limits WHERE key = p_key FOR UPDATE;
+
+  IF NOT FOUND THEN
+    INSERT INTO rate_limits (key, count, locked, locked_until, reset_at, updated_at)
+    VALUES (p_key, 1, false, NULL,
+            v_now + (p_window_ms || ' milliseconds')::interval, v_now)
+    ON CONFLICT (key) DO NOTHING;
+    RETURN jsonb_build_object('limited', false, 'count', 1);
+  END IF;
+
+  -- Reset window if expired
+  IF v_now > v_row.reset_at THEN
+    UPDATE rate_limits SET count = 1, locked = false, locked_until = NULL,
+      reset_at = v_now + (p_window_ms || ' milliseconds')::interval,
+      updated_at = v_now
+    WHERE key = p_key;
+    RETURN jsonb_build_object('limited', false, 'count', 1);
+  END IF;
+
+  -- Check lockout
+  IF v_row.locked AND v_row.locked_until IS NOT NULL AND v_now < v_row.locked_until THEN
+    RETURN jsonb_build_object('limited', true, 'count', v_row.count);
+  END IF;
+
+  -- Increment
+  UPDATE rate_limits SET count = count + 1,
+    locked = CASE WHEN count + 1 >= p_max AND p_lockout_ms > 0 THEN true ELSE false END,
+    locked_until = CASE WHEN count + 1 >= p_max AND p_lockout_ms > 0
+      THEN v_now + (p_lockout_ms || ' milliseconds')::interval ELSE NULL END,
+    updated_at = v_now
+  WHERE key = p_key;
+
+  RETURN jsonb_build_object('limited', (v_row.count + 1 > p_max), 'count', v_row.count + 1);
+END;
+$$;
+
 -- Auto-update updated_at timestamps
 CREATE OR REPLACE FUNCTION set_updated_at()
 RETURNS trigger LANGUAGE plpgsql AS $$
@@ -514,7 +614,6 @@ CREATE TRIGGER trg_reviews_updated_at    BEFORE UPDATE ON reviews    FOR EACH RO
 DROP TRIGGER IF EXISTS trg_profiles_updated_at   ON profiles;
 CREATE TRIGGER trg_profiles_updated_at   BEFORE UPDATE ON profiles   FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
--- Trigger: auto-approve review recalculates product rating
 CREATE OR REPLACE FUNCTION trg_review_approved()
 RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
@@ -527,14 +626,15 @@ $$;
 DROP TRIGGER IF EXISTS trg_reviews_rating ON reviews;
 CREATE TRIGGER trg_reviews_rating AFTER UPDATE ON reviews FOR EACH ROW EXECUTE FUNCTION trg_review_approved();
 
--- Grant RPC function access to both anon and authenticated roles
-GRANT EXECUTE ON FUNCTION decrement_stock(text,integer) TO anon, authenticated;
-GRANT EXECUTE ON FUNCTION increment_coupon_usage(text)  TO anon, authenticated;
-GRANT EXECUTE ON FUNCTION refresh_product_rating(text)  TO anon, authenticated;
+-- Grant RPC function access (SECURITY DEFINER handles its own auth)
+GRANT EXECUTE ON FUNCTION decrement_stock(text,integer)             TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION increment_coupon_usage(text)              TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION refresh_product_rating(text)              TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION check_rate_limit(text,integer,bigint,bigint) TO anon, authenticated;
 
 
 -- ============================================================
--- § 15. TRIGGER: Auto-create profile on Supabase auth signup
+-- § 16. TRIGGER: Auto-create profile on Supabase auth signup
 -- ============================================================
 CREATE OR REPLACE FUNCTION handle_new_user()
 RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER AS $$
@@ -560,7 +660,7 @@ CREATE TRIGGER on_auth_user_created
 
 
 -- ============================================================
--- § 16. REALTIME
+-- § 17. REALTIME
 -- ============================================================
 DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_publication WHERE pubname='supabase_realtime') THEN
@@ -579,7 +679,7 @@ END $$;
 
 
 -- ============================================================
--- § 17. INDEXES
+-- § 18. INDEXES
 -- ============================================================
 CREATE INDEX IF NOT EXISTS idx_products_slug          ON products(slug);
 CREATE INDEX IF NOT EXISTS idx_products_category_slug ON products(category_slug);
@@ -593,183 +693,140 @@ CREATE INDEX IF NOT EXISTS idx_blog_posts_slug        ON blog_posts(slug);
 CREATE INDEX IF NOT EXISTS idx_notifications_read     ON notifications(read);
 CREATE INDEX IF NOT EXISTS idx_notifications_user_id  ON notifications(user_id);
 CREATE INDEX IF NOT EXISTS idx_coupons_code           ON coupons(code);
+CREATE INDEX IF NOT EXISTS idx_rate_limits_reset_at   ON rate_limits(reset_at);
+
 
 -- ============================================================
--- § 18. STORAGE — product-images bucket
+-- § 19. STORAGE — product-images bucket
 -- ============================================================
--- Create the public bucket used by admin product-edit for image uploads.
--- Safe to re-run: ON CONFLICT (id) DO NOTHING.
 INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 VALUES (
-  'product-images',
-  'product-images',
-  true,
-  5242880,   -- 5 MB per file
+  'product-images', 'product-images', true, 5242880,
   ARRAY['image/jpeg','image/png','image/webp','image/gif']
-)
-ON CONFLICT (id) DO NOTHING;
+) ON CONFLICT (id) DO NOTHING;
 
--- Allow anyone to read public product images
 DROP POLICY IF EXISTS "Public read product images"  ON storage.objects;
 CREATE POLICY "Public read product images"
-  ON storage.objects FOR SELECT TO anon
-  USING (bucket_id = 'product-images');
+  ON storage.objects FOR SELECT TO anon USING (bucket_id = 'product-images');
 
--- Allow authenticated users (admins) to upload/update/delete product images
 DROP POLICY IF EXISTS "Admin upload product images"  ON storage.objects;
 CREATE POLICY "Admin upload product images"
-  ON storage.objects FOR INSERT TO authenticated
-  WITH CHECK (bucket_id = 'product-images');
+  ON storage.objects FOR INSERT TO authenticated WITH CHECK (bucket_id = 'product-images');
 
 DROP POLICY IF EXISTS "Admin update product images"  ON storage.objects;
 CREATE POLICY "Admin update product images"
-  ON storage.objects FOR UPDATE TO authenticated
-  USING (bucket_id = 'product-images');
+  ON storage.objects FOR UPDATE TO authenticated USING (bucket_id = 'product-images');
 
 DROP POLICY IF EXISTS "Admin delete product images"  ON storage.objects;
 CREATE POLICY "Admin delete product images"
-  ON storage.objects FOR DELETE TO authenticated
-  USING (bucket_id = 'product-images');
+  ON storage.objects FOR DELETE TO authenticated USING (bucket_id = 'product-images');
+
 
 -- ============================================================
--- § 19. STORAGE — payment-slips bucket
+-- § 20. STORAGE — payment-slips bucket
 -- ============================================================
--- Private bucket for customer bank transfer slip uploads.
--- Max file size: 500 KB.  Accepted: JPEG, PNG, WebP, PDF.
--- NOT public — direct URL access requires authenticated SELECT policy.
--- The admin views slips via the admin panel (service-role key).
--- Customers upload at checkout via the anon/authenticated policies below.
--- Safe to re-run: ON CONFLICT (id) DO NOTHING.
 INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 VALUES (
-  'payment-slips',
-  'payment-slips',
-  true,           -- public so checkout can retrieve the URL immediately after upload
-  524288,         -- 500 KB
+  'payment-slips', 'payment-slips', true, 524288,
   ARRAY['image/jpeg','image/png','image/webp','application/pdf']
 ) ON CONFLICT (id) DO NOTHING;
 
--- Allow anonymous users (pre-login browser sessions) to upload slips
 DROP POLICY IF EXISTS "Anon upload payment slips"  ON storage.objects;
 CREATE POLICY "Anon upload payment slips"
-  ON storage.objects FOR INSERT TO anon
-  WITH CHECK (bucket_id = 'payment-slips');
+  ON storage.objects FOR INSERT TO anon WITH CHECK (bucket_id = 'payment-slips');
 
--- Allow anon to UPDATE/replace an existing slip (needed for upsert:true in the checkout)
 DROP POLICY IF EXISTS "Anon update payment slips"  ON storage.objects;
 CREATE POLICY "Anon update payment slips"
   ON storage.objects FOR UPDATE TO anon
-  USING (bucket_id = 'payment-slips')
-  WITH CHECK (bucket_id = 'payment-slips');
+  USING (bucket_id = 'payment-slips') WITH CHECK (bucket_id = 'payment-slips');
 
--- Allow authenticated customers to upload slips
 DROP POLICY IF EXISTS "Auth upload payment slips"  ON storage.objects;
 CREATE POLICY "Auth upload payment slips"
-  ON storage.objects FOR INSERT TO authenticated
-  WITH CHECK (bucket_id = 'payment-slips');
+  ON storage.objects FOR INSERT TO authenticated WITH CHECK (bucket_id = 'payment-slips');
 
--- Allow authenticated to UPDATE/replace slips (upsert support)
 DROP POLICY IF EXISTS "Auth update payment slips"  ON storage.objects;
 CREATE POLICY "Auth update payment slips"
   ON storage.objects FOR UPDATE TO authenticated
-  USING (bucket_id = 'payment-slips')
-  WITH CHECK (bucket_id = 'payment-slips');
+  USING (bucket_id = 'payment-slips') WITH CHECK (bucket_id = 'payment-slips');
 
--- Allow authenticated users (admins + customers) to read slips
 DROP POLICY IF EXISTS "Auth read payment slips"    ON storage.objects;
 CREATE POLICY "Auth read payment slips"
-  ON storage.objects FOR SELECT TO authenticated
-  USING (bucket_id = 'payment-slips');
+  ON storage.objects FOR SELECT TO authenticated USING (bucket_id = 'payment-slips');
 
--- Allow public SELECT so the stored URL works in the admin order-detail page
--- (bucket is already marked public=true above; this policy makes it explicit)
 DROP POLICY IF EXISTS "Public read payment slips"  ON storage.objects;
 CREATE POLICY "Public read payment slips"
-  ON storage.objects FOR SELECT TO anon
-  USING (bucket_id = 'payment-slips');
+  ON storage.objects FOR SELECT TO anon USING (bucket_id = 'payment-slips');
+
 
 -- ============================================================
--- § 20. TABLE-LEVEL GRANTS
+-- § 21. TABLE-LEVEL GRANTS
 -- ============================================================
--- In Supabase projects created after ~2023, RLS policies alone
--- are NOT enough. The anon and authenticated roles also need
--- explicit table-level GRANT privileges, otherwise every request
--- gets "permission denied for table orders" regardless of policies.
--- Safe to run on older projects too — GRANT is idempotent.
--- ============================================================
-
--- Schema access (required before any table operations)
 GRANT USAGE ON SCHEMA public TO anon, authenticated;
 
--- orders
--- Anon needs DELETE so the admin dashboard (which uses the anon key + custom password auth)
--- can delete orders. Without this grant, deleteOrder() fails with "permission denied".
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.orders TO anon;
-GRANT ALL                            ON TABLE public.orders TO authenticated;
+-- orders: C-1 FIX — anon INSERT only (no SELECT/UPDATE/DELETE)
+-- Admin operations use service role key via /api/admin/orders
+GRANT INSERT                              ON TABLE public.orders TO anon;
+GRANT ALL                                 ON TABLE public.orders TO authenticated;
 
--- products
-GRANT SELECT                        ON TABLE public.products TO anon;
-GRANT ALL                           ON TABLE public.products TO authenticated;
+-- products: C-3 FIX — anon and authenticated read only
+-- Admin writes via service role key in /api/admin/products
+GRANT SELECT                              ON TABLE public.products TO anon;
+GRANT SELECT                              ON TABLE public.products TO authenticated;
 
--- categories
-GRANT SELECT                        ON TABLE public.categories TO anon;
-GRANT ALL                           ON TABLE public.categories TO authenticated;
+-- categories: C-3 FIX — read only for both roles
+GRANT SELECT                              ON TABLE public.categories TO anon;
+GRANT SELECT                              ON TABLE public.categories TO authenticated;
 
--- coupons
-GRANT SELECT                        ON TABLE public.coupons TO anon;
-GRANT ALL                           ON TABLE public.coupons TO authenticated;
+-- coupons: anon read active only
+GRANT SELECT                              ON TABLE public.coupons TO anon;
+GRANT SELECT                              ON TABLE public.coupons TO authenticated;
 
--- profiles
-GRANT SELECT, INSERT, UPDATE        ON TABLE public.profiles TO anon;
-GRANT ALL                           ON TABLE public.profiles TO authenticated;
+-- profiles: C-2 FIX — anon INSERT only (signup), no SELECT or UPDATE
+GRANT INSERT                              ON TABLE public.profiles TO anon;
+GRANT ALL                                 ON TABLE public.profiles TO authenticated;
 
 -- reviews
-GRANT SELECT, INSERT                ON TABLE public.reviews TO anon;
-GRANT ALL                           ON TABLE public.reviews TO authenticated;
+GRANT SELECT, INSERT                      ON TABLE public.reviews TO anon;
+GRANT ALL                                 ON TABLE public.reviews TO authenticated;
 
 -- notifications
-GRANT SELECT, INSERT, UPDATE        ON TABLE public.notifications TO anon;
-GRANT ALL                           ON TABLE public.notifications TO authenticated;
+GRANT SELECT, INSERT, UPDATE              ON TABLE public.notifications TO anon;
+GRANT ALL                                 ON TABLE public.notifications TO authenticated;
 
--- contact_messages
-GRANT INSERT                        ON TABLE public.contact_messages TO anon;
-GRANT ALL                           ON TABLE public.contact_messages TO authenticated;
+-- contact_messages: anon INSERT only
+GRANT INSERT                              ON TABLE public.contact_messages TO anon;
+GRANT ALL                                 ON TABLE public.contact_messages TO authenticated;
 
--- blog_posts
-GRANT SELECT                        ON TABLE public.blog_posts TO anon;
-GRANT ALL                           ON TABLE public.blog_posts TO authenticated;
+-- blog_posts: read only for anon
+GRANT SELECT                              ON TABLE public.blog_posts TO anon;
+GRANT SELECT                              ON TABLE public.blog_posts TO authenticated;
 
--- shipping_zones
-GRANT SELECT                        ON TABLE public.shipping_zones TO anon;
-GRANT ALL                           ON TABLE public.shipping_zones TO authenticated;
+-- shipping_zones: read only
+GRANT SELECT                              ON TABLE public.shipping_zones TO anon;
+GRANT SELECT                              ON TABLE public.shipping_zones TO authenticated;
 
--- site_settings
--- Anon needs INSERT + UPDATE so the admin panel (custom password auth = anon role)
--- can save settings via the anon key. SELECT is already granted by the RLS policy.
-GRANT SELECT, INSERT, UPDATE        ON TABLE public.site_settings TO anon;
-GRANT ALL                           ON TABLE public.site_settings TO authenticated;
+-- site_settings: anon read only (admin writes via service role)
+GRANT SELECT                              ON TABLE public.site_settings TO anon;
+GRANT ALL                                 ON TABLE public.site_settings TO authenticated;
 
--- newsletter_subscribers
-GRANT INSERT                        ON TABLE public.newsletter_subscribers TO anon;
-GRANT ALL                           ON TABLE public.newsletter_subscribers TO authenticated;
+-- newsletter_subscribers: anon INSERT only (M-4 FIX: no SELECT)
+GRANT INSERT                              ON TABLE public.newsletter_subscribers TO anon;
+GRANT ALL                                 ON TABLE public.newsletter_subscribers TO authenticated;
 
--- admin_config
--- No anon access — admin_config contains sensitive data (password hashes, API tokens).
--- Access is only via the service_role key in /api/* serverless functions.
--- GRANT SELECT to anon is intentionally omitted — RLS would block it anyway.
+-- admin_config: no anon access at all
 GRANT ALL ON TABLE public.admin_config TO authenticated;
 
+-- rate_limits: no direct anon access; use check_rate_limit() RPC
+-- (SECURITY DEFINER function handles its own table access)
+
+
 -- ============================================================
--- § 21. RELOAD POSTGREST SCHEMA CACHE
--- ============================================================
--- Forces Supabase to immediately recognise any newly added columns
--- (e.g. coupon_code) without requiring a project restart.
--- Fix for: PGRST204 "Could not find the 'coupon_code' column of
--- 'orders' in the schema cache"
+-- § 22. RELOAD POSTGREST SCHEMA CACHE
 -- ============================================================
 NOTIFY pgrst, 'reload schema';
 
 -- ============================================================
--- Done. All tables, columns, functions, policies, grants created.
--- Schema cache reloaded — new columns are immediately available.
+-- Done. Security patch v3 applied.
+-- Critical RLS issues C-1, C-2, C-3, M-4 resolved.
+-- Persistent rate_limits table added for H-1 fix.
 -- ============================================================
