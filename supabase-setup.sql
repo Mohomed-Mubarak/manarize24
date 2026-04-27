@@ -189,6 +189,7 @@ DROP POLICY IF EXISTS "Anon all coupons"          ON coupons;
 DROP POLICY IF EXISTS "Anon read active coupons"  ON coupons;
 DROP POLICY IF EXISTS "Anon read all coupons"     ON coupons;
 DROP POLICY IF EXISTS "Auth all coupons"          ON coupons;
+DROP POLICY IF EXISTS "Auth read coupons"         ON coupons;
 
 -- Anon reads active coupons only (storefront validation)
 CREATE POLICY "Anon read active coupons" ON coupons
@@ -239,6 +240,7 @@ ALTER TABLE shipping_zones ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Anon all shipping_zones"   ON shipping_zones;
 DROP POLICY IF EXISTS "Anon read shipping_zones"  ON shipping_zones;
 DROP POLICY IF EXISTS "Auth all shipping_zones"   ON shipping_zones;
+DROP POLICY IF EXISTS "Auth read shipping_zones"  ON shipping_zones;
 
 CREATE POLICY "Anon read shipping_zones" ON shipping_zones
   FOR SELECT TO anon USING (true);
@@ -278,6 +280,7 @@ ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Anon read all profiles"  ON profiles;
 DROP POLICY IF EXISTS "Anon update profiles"    ON profiles;
 DROP POLICY IF EXISTS "Anon insert profiles"    ON profiles;
+DROP POLICY IF EXISTS "Anon insert own profile" ON profiles;
 DROP POLICY IF EXISTS "Users own profile"       ON profiles;
 
 -- C-2 FIX: Anon can only INSERT during signup (Supabase trigger handles this,
@@ -325,6 +328,8 @@ DROP POLICY IF EXISTS "Anon read approved reviews" ON reviews;
 DROP POLICY IF EXISTS "Anon all reviews"           ON reviews;
 DROP POLICY IF EXISTS "Anon insert reviews"        ON reviews;
 DROP POLICY IF EXISTS "Auth all reviews"           ON reviews;
+DROP POLICY IF EXISTS "Auth read reviews"          ON reviews;
+DROP POLICY IF EXISTS "Auth insert reviews"        ON reviews;
 
 -- M-4: Anon can only read approved, non-rejected reviews
 CREATE POLICY "Anon read approved reviews" ON reviews
@@ -398,6 +403,7 @@ ALTER TABLE blog_posts ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Anon read published posts" ON blog_posts;
 DROP POLICY IF EXISTS "Anon all blog_posts"       ON blog_posts;
 DROP POLICY IF EXISTS "Auth all blog_posts"       ON blog_posts;
+DROP POLICY IF EXISTS "Auth read blog_posts"      ON blog_posts;
 
 -- M-4: Anon reads published posts only
 CREATE POLICY "Anon read published posts" ON blog_posts
@@ -430,12 +436,47 @@ DROP POLICY IF EXISTS "Anon insert notifications" ON notifications;
 DROP POLICY IF EXISTS "Anon update notifications" ON notifications;
 DROP POLICY IF EXISTS "Auth all notifications"    ON notifications;
 
+-- Anon: read admin-targeted notifications (realtime badge), insert new-order notifications
 CREATE POLICY "Anon read notifications"   ON notifications FOR SELECT TO anon USING (true);
 CREATE POLICY "Anon insert notifications" ON notifications FOR INSERT TO anon WITH CHECK (true);
--- Only allow anon to mark as read, not change other fields
+-- Anon may only flip read=true (mark-read), nothing else
 CREATE POLICY "Anon update notifications" ON notifications FOR UPDATE TO anon
   USING (true) WITH CHECK (read = true);
-CREATE POLICY "Auth all notifications"    ON notifications FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Auth all notifications" ON notifications;
+-- Admin-role users have full access to all notifications (dashboard)
+DROP POLICY IF EXISTS "Admin all notifications" ON notifications;
+CREATE POLICY "Admin all notifications"
+  ON notifications FOR ALL TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.profiles
+      WHERE id = auth.uid() AND role = 'admin' AND active = true
+    )
+  )
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM public.profiles
+      WHERE id = auth.uid() AND role = 'admin' AND active = true
+    )
+  );
+
+-- Regular authenticated users may read, update, and delete their OWN notifications only
+DROP POLICY IF EXISTS "Auth user own notifications select" ON notifications;
+CREATE POLICY "Auth user own notifications select"
+  ON notifications FOR SELECT TO authenticated
+  USING (user_id = auth.uid()::text);
+
+DROP POLICY IF EXISTS "Auth user own notifications update" ON notifications;
+CREATE POLICY "Auth user own notifications update"
+  ON notifications FOR UPDATE TO authenticated
+  USING (user_id = auth.uid()::text)
+  WITH CHECK (user_id = auth.uid()::text);
+
+DROP POLICY IF EXISTS "Auth user own notifications delete" ON notifications;
+CREATE POLICY "Auth user own notifications delete"
+  ON notifications FOR DELETE TO authenticated
+  USING (user_id = auth.uid()::text);
 
 
 -- ============================================================
@@ -454,9 +495,27 @@ DROP POLICY IF EXISTS "Anon write site_settings"  ON site_settings;
 DROP POLICY IF EXISTS "Anon update site_settings" ON site_settings;
 DROP POLICY IF EXISTS "Auth all site_settings"    ON site_settings;
 
--- Storefront reads settings; admin writes go via /api/admin (service role)
+-- Storefront reads settings publicly
 CREATE POLICY "Anon read site_settings"   ON site_settings FOR SELECT TO anon USING (true);
-CREATE POLICY "Auth all site_settings"    ON site_settings FOR ALL TO authenticated USING (true) WITH CHECK (true);
+-- Authenticated users may read settings (e.g. for personalisation)
+DROP POLICY IF EXISTS "Auth read site_settings" ON site_settings;
+CREATE POLICY "Auth read site_settings"   ON site_settings FOR SELECT TO authenticated USING (true);
+-- Only admin-role users may write settings
+DROP POLICY IF EXISTS "Admin write site_settings" ON site_settings;
+CREATE POLICY "Admin write site_settings"
+  ON site_settings FOR ALL TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.profiles
+      WHERE id = auth.uid() AND role = 'admin' AND active = true
+    )
+  )
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM public.profiles
+      WHERE id = auth.uid() AND role = 'admin' AND active = true
+    )
+  );
 
 
 -- ============================================================
@@ -709,53 +768,115 @@ DROP POLICY IF EXISTS "Public read product images"  ON storage.objects;
 CREATE POLICY "Public read product images"
   ON storage.objects FOR SELECT TO anon USING (bucket_id = 'product-images');
 
+-- Authenticated non-admin users may also read product images (e.g. logged-in shoppers)
+DROP POLICY IF EXISTS "Auth read product images"  ON storage.objects;
+CREATE POLICY "Auth read product images"
+  ON storage.objects FOR SELECT TO authenticated USING (bucket_id = 'product-images');
+
+-- Only admin-role users may upload, update, or delete product / blog images
 DROP POLICY IF EXISTS "Admin upload product images"  ON storage.objects;
 CREATE POLICY "Admin upload product images"
-  ON storage.objects FOR INSERT TO authenticated WITH CHECK (bucket_id = 'product-images');
+  ON storage.objects FOR INSERT TO authenticated
+  WITH CHECK (
+    bucket_id = 'product-images'
+    AND EXISTS (
+      SELECT 1 FROM public.profiles
+      WHERE id = auth.uid() AND role = 'admin' AND active = true
+    )
+  );
 
 DROP POLICY IF EXISTS "Admin update product images"  ON storage.objects;
 CREATE POLICY "Admin update product images"
-  ON storage.objects FOR UPDATE TO authenticated USING (bucket_id = 'product-images');
+  ON storage.objects FOR UPDATE TO authenticated
+  USING (
+    bucket_id = 'product-images'
+    AND EXISTS (
+      SELECT 1 FROM public.profiles
+      WHERE id = auth.uid() AND role = 'admin' AND active = true
+    )
+  );
 
 DROP POLICY IF EXISTS "Admin delete product images"  ON storage.objects;
 CREATE POLICY "Admin delete product images"
-  ON storage.objects FOR DELETE TO authenticated USING (bucket_id = 'product-images');
+  ON storage.objects FOR DELETE TO authenticated
+  USING (
+    bucket_id = 'product-images'
+    AND EXISTS (
+      SELECT 1 FROM public.profiles
+      WHERE id = auth.uid() AND role = 'admin' AND active = true
+    )
+  );
 
 
 -- ============================================================
--- § 20. STORAGE — payment-slips bucket
+-- § 20. STORAGE — payment-slips bucket  (PRIVATE)
+-- ============================================================
+-- Bucket is PRIVATE: no public URLs. Admins access via signed URLs.
+-- Only authenticated (logged-in) users may upload their own slip.
+-- Only users with profiles.role = 'admin' may read any slip.
 -- ============================================================
 INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 VALUES (
-  'payment-slips', 'payment-slips', true, 524288,
+  'payment-slips', 'payment-slips', false, 524288,
   ARRAY['image/jpeg','image/png','image/webp','application/pdf']
-) ON CONFLICT (id) DO NOTHING;
+) ON CONFLICT (id) DO UPDATE SET public = false;
 
-DROP POLICY IF EXISTS "Anon upload payment slips"  ON storage.objects;
-CREATE POLICY "Anon upload payment slips"
-  ON storage.objects FOR INSERT TO anon WITH CHECK (bucket_id = 'payment-slips');
+-- Remove old permissive policies (anon access & broad auth read)
+DROP POLICY IF EXISTS "Anon upload payment slips"   ON storage.objects;
+DROP POLICY IF EXISTS "Anon update payment slips"   ON storage.objects;
+DROP POLICY IF EXISTS "Auth read payment slips"     ON storage.objects;
+DROP POLICY IF EXISTS "Public read payment slips"   ON storage.objects;
+DROP POLICY IF EXISTS "Auth upload payment slips"   ON storage.objects;
+DROP POLICY IF EXISTS "Auth update payment slips"   ON storage.objects;
 
-DROP POLICY IF EXISTS "Anon update payment slips"  ON storage.objects;
-CREATE POLICY "Anon update payment slips"
-  ON storage.objects FOR UPDATE TO anon
-  USING (bucket_id = 'payment-slips') WITH CHECK (bucket_id = 'payment-slips');
+-- Authenticated users may upload a slip whose path starts with their own order id.
+-- The path format is: {orderId}/slip.{ext}
+-- We validate they own that order by joining to the orders table.
+DROP POLICY IF EXISTS "Auth user upload own order slip"   ON storage.objects;
+CREATE POLICY "Auth user upload own order slip"
+  ON storage.objects FOR INSERT TO authenticated
+  WITH CHECK (
+    bucket_id = 'payment-slips'
+    AND EXISTS (
+      SELECT 1 FROM public.orders
+      WHERE id::text = split_part(name, '/', 1)
+        AND customer_id = auth.uid()::text
+    )
+  );
 
-DROP POLICY IF EXISTS "Auth upload payment slips"  ON storage.objects;
-CREATE POLICY "Auth upload payment slips"
-  ON storage.objects FOR INSERT TO authenticated WITH CHECK (bucket_id = 'payment-slips');
-
-DROP POLICY IF EXISTS "Auth update payment slips"  ON storage.objects;
-CREATE POLICY "Auth update payment slips"
+DROP POLICY IF EXISTS "Auth user update own order slip"  ON storage.objects;
+CREATE POLICY "Auth user update own order slip"
   ON storage.objects FOR UPDATE TO authenticated
-  USING (bucket_id = 'payment-slips') WITH CHECK (bucket_id = 'payment-slips');
+  USING (
+    bucket_id = 'payment-slips'
+    AND EXISTS (
+      SELECT 1 FROM public.orders
+      WHERE id::text = split_part(name, '/', 1)
+        AND customer_id = auth.uid()::text
+    )
+  )
+  WITH CHECK (
+    bucket_id = 'payment-slips'
+    AND EXISTS (
+      SELECT 1 FROM public.orders
+      WHERE id::text = split_part(name, '/', 1)
+        AND customer_id = auth.uid()::text
+    )
+  );
 
-DROP POLICY IF EXISTS "Auth read payment slips"    ON storage.objects;
-CREATE POLICY "Auth read payment slips"
-  ON storage.objects FOR SELECT TO authenticated USING (bucket_id = 'payment-slips');
-
-DROP POLICY IF EXISTS "Public read payment slips"  ON storage.objects;
-CREATE POLICY "Public read payment slips"
-  ON storage.objects FOR SELECT TO anon USING (bucket_id = 'payment-slips');
+-- Only admin-role users may read payment slips (for the admin dashboard).
+DROP POLICY IF EXISTS "Admin read payment slips"    ON storage.objects;
+CREATE POLICY "Admin read payment slips"
+  ON storage.objects FOR SELECT TO authenticated
+  USING (
+    bucket_id = 'payment-slips'
+    AND EXISTS (
+      SELECT 1 FROM public.profiles
+      WHERE id = auth.uid()
+        AND role = 'admin'
+        AND active = true
+    )
+  );
 
 
 -- ============================================================

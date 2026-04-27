@@ -1,7 +1,7 @@
 /* ============================================================
    ZENMARKET — ADMIN BLOG EDIT  (create / edit post)
    ============================================================ */
-import { requireAdmin }      from './admin-auth.js';
+import { requireAdmin, verifyAdminSession } from './admin-auth.js';
 import { injectAdminLayout } from './admin-layout.js';
 import { withLoader }        from '../loader.js';
 import toast                 from '../toast.js';
@@ -158,6 +158,10 @@ function bindCoverImage() {
     const originalText = fileBtn.innerHTML;
     fileBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Uploading…';
     try {
+      // Admin role verification (belt-and-suspenders; RLS enforces at DB level)
+      const authCheck = await verifyAdminSession();
+      if (!authCheck.ok) throw new Error(`Upload denied: ${authCheck.reason}`);
+
       const { getSupabase } = await import('../supabase.js');
       const sb = getSupabase();
       if (!sb) throw new Error('Supabase not initialised');

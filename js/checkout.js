@@ -1081,8 +1081,15 @@ function sendAdminWhatsApp(order) {
 // ── Bank Slip — Supabase Storage Upload ──────────────────────
 /**
  * Converts a base64 data URL to a Blob and uploads it to the
- * Supabase "payment-slips" storage bucket.
- * Returns the public URL string on success, or null on failure.
+ * PRIVATE Supabase "payment-slips" storage bucket.
+ *
+ * Returns the storage FILE PATH (e.g. "abc-123/slip.jpg") on success,
+ * or null on failure.  The path — NOT a URL — is stored in the orders
+ * table.  Admins retrieve a short-lived signed URL at view time.
+ *
+ * Requires the user to be authenticated (enforced both by the checkout
+ * auth guard and by the bucket's RLS policy).
+ *
  * Never throws — a failed upload must not block order placement.
  */
 async function uploadBankSlipToStorage(dataUrl, orderId) {
@@ -1090,6 +1097,13 @@ async function uploadBankSlipToStorage(dataUrl, orderId) {
     const { getSupabase } = await import('./supabase.js');
     const sb = getSupabase();
     if (!sb) { console.warn('[Checkout] Supabase not ready — slip not uploaded.'); return null; }
+
+    // Verify the user is authenticated before attempting upload
+    const { data: sessionData } = await sb.auth.getSession();
+    if (!sessionData?.session?.user) {
+      console.warn('[Checkout] Unauthenticated — slip upload rejected.');
+      return null;
+    }
 
     // Convert data URL → Blob (browser-native, no libraries needed)
     const fetchRes  = await fetch(dataUrl);
@@ -1109,9 +1123,11 @@ async function uploadBankSlipToStorage(dataUrl, orderId) {
       return null;
     }
 
-    // Get the public URL (bucket must be public, or use createSignedUrl for private)
-    const { data: urlData } = sb.storage.from('payment-slips').getPublicUrl(filePath);
-    return urlData?.publicUrl || null;
+    // Bucket is PRIVATE — return the storage path so admins can generate
+    // short-lived signed URLs when viewing the order.  Never expose a
+    // public URL (the bucket has no public access).
+    console.log('[Checkout] Bank slip stored at path:', filePath);
+    return filePath;
   } catch (e) {
     console.warn('[Checkout] uploadBankSlipToStorage exception:', e.message);
     return null;

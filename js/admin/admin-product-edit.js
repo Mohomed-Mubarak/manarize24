@@ -1,7 +1,7 @@
 /* ============================================================
    ZENMARKET — ADMIN PRODUCT EDIT / CREATE  (fixed)
    ============================================================ */
-import { requireAdmin }       from './admin-auth.js';
+import { requireAdmin, verifyAdminSession } from './admin-auth.js';
 import { injectAdminLayout }  from './admin-layout.js';
 import {
   getProducts, saveProduct, getCategories,
@@ -156,6 +156,10 @@ async function uploadImageToStorage(file) {
   if (DEMO_MODE) {
     return URL.createObjectURL(file);
   }
+
+  // ── Admin role verification (belt-and-suspenders; RLS is the real gate) ──
+  const authCheck = await verifyAdminSession();
+  if (!authCheck.ok) throw new Error(`Upload denied: ${authCheck.reason}`);
 
   // ── Production: direct Supabase Storage upload ────────────────
   const { getSupabase } = await import('../supabase.js');

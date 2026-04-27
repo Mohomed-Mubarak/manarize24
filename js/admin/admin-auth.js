@@ -332,3 +332,61 @@ export async function changeAdminPassword(currentPw, newPw) {
   clearAdminToken();
   return { success: true };
 }
+
+// ── Admin role verification for storage writes ─────────────────
+/**
+ * Verify that the current browser session is an active, admin-role
+ * Supabase user.  Call this before any storage upload / edit / delete
+ * in admin JS as a belt-and-suspenders check (RLS is the real gate).
+ *
+ * Returns { ok: true } on success or { ok: false, reason: string } on
+ * failure.  Never throws.
+ */
+export async function verifyAdminSession() {
+  // 1. Check the in-memory sessionStorage session first (fast path)
+  const session = getAdminSession();
+  if (!session) return { ok: false, reason: 'No admin session — please log in.' };
+
+  if (session.loginAt && Date.now() - session.loginAt > SESSION_TTL_MS) {
+    adminLogout();
+    return { ok: false, reason: 'Admin session expired — please log in again.' };
+  }
+
+  // 2. If this session was created via Supabase (has supabaseId), do a
+  //    live DB role check so a demoted user is blocked immediately.
+  if (session.supabaseId) {
+    try {
+      const sb = getSupabase();
+      if (!sb) return { ok: false, reason: 'Supabase not initialised.' };
+
+      const { data: { session: sbSession }, error: sessErr } = await sb.auth.getSession();
+      if (sessErr || !sbSession || sbSession.user?.id !== session.supabaseId) {
+        adminLogout();
+        return { ok: false, reason: 'Supabase session expired — please log in again.' };
+      }
+
+      const { data: profile, error: profileErr } = await sb
+        .from('profiles')
+        .select('role, active')
+        .eq('id', session.supabaseId)
+        .single();
+
+      if (profileErr || !profile) {
+        return { ok: false, reason: 'Could not verify admin role.' };
+      }
+      if (profile.role !== 'admin') {
+        adminLogout();
+        return { ok: false, reason: 'Access denied — admin role required.' };
+      }
+      if (profile.active === false) {
+        adminLogout();
+        return { ok: false, reason: 'Admin account is suspended.' };
+      }
+    } catch (e) {
+      // Non-fatal for legacy (env-admin) sessions — fall through
+      console.warn('[AdminAuth] verifyAdminSession exception:', e.message);
+    }
+  }
+
+  return { ok: true };
+}

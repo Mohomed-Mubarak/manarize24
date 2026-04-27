@@ -111,8 +111,46 @@ withLoader(async () => {
     return;
   }
 
+  // If paymentSlip is a storage path (not a URL or base64), resolve a
+  // short-lived signed URL so the admin can view it without public access.
+  await resolveSlipSignedUrl();
+
   renderOrderDetail();
 });
+
+/**
+ * If order.paymentSlip looks like a storage path (no protocol prefix,
+ * no data: prefix), ask Supabase for a 60-minute signed URL and update
+ * the in-memory order object.  Errors are swallowed — worst case the
+ * admin sees a broken image link.
+ */
+async function resolveSlipSignedUrl() {
+  if (!order?.paymentSlip) return;
+  const slip = order.paymentSlip;
+  // Already a URL or base64 fallback — nothing to resolve
+  if (slip.startsWith('http') || slip.startsWith('data:')) return;
+
+  try {
+    const { getSupabase } = await import('../supabase.js');
+    const sb = getSupabase();
+    if (!sb) return;
+
+    // 3600 s = 60 minutes — enough for an admin review session
+    const { data, error } = await sb.storage
+      .from('payment-slips')
+      .createSignedUrl(slip, 3600);
+
+    if (error) {
+      console.warn('[AdminOrderDetail] Signed URL error:', error.message);
+      return;
+    }
+
+    order.paymentSlip = data.signedUrl;
+    console.log('[AdminOrderDetail] Slip signed URL generated.');
+  } catch (e) {
+    console.warn('[AdminOrderDetail] resolveSlipSignedUrl exception:', e.message);
+  }
+}
 
 // ── Render full order detail ───────────────────────────────────
 function renderOrderDetail() {
